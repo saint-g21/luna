@@ -1,0 +1,82 @@
+steps:
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "-sS"
+      ports: "80,443,8080,8443,3000,4000,5000,8000,9000"
+      additional_args: "-T4 --reason"
+    description: "Identify all web services and non-standard web application ports"
+
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "-sV"
+      ports: "80,443,8080,8443"
+      additional_args: "-T4 --script=http-title,http-methods,http-trace,http-php-version"
+    description: "Web service version detection with HTTP-specific NSE scripts"
+
+  - tool: curl
+    arguments:
+      url: "http://{target}/"
+      additional_args: "-I -s -L --max-time 15"
+    description: "Follow redirects and inspect response headers, server technologies, and cookies"
+
+  - tool: curl
+    arguments:
+      url: "http://{target}/robots.txt"
+      additional_args: "-s --max-time 10"
+    description: "Check robots.txt for hidden paths and administrative interfaces"
+
+  - tool: gobuster
+    arguments:
+      url: "http://{target}"
+      mode: "dir"
+      wordlist: "/usr/share/seclists/Discovery/Web-Content/common.txt"
+      additional_args: "-t 50 -x php,html,txt,bak,old,zip,sql,js,json,xml,config"
+    description: "Directory and file enumeration with common extensions"
+
+  - tool: gobuster
+    arguments:
+      url: "http://{target}"
+      mode: "dns"
+      wordlist: "/usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt"
+      additional_args: "-t 50"
+    description: "Subdomain enumeration for virtual hosting discovery"
+
+  - tool: nikto
+    arguments:
+      target: "{target}"
+      additional_args: "-ssl -C all -Tuning 1234567890"
+    description: "Comprehensive web vulnerability scan with all checks and SSL support"
+
+  - tool: wpscan
+    arguments:
+      url: "http://{target}"
+      additional_args: "--enumerate vp,vt,tt,cb,dbe,u,m --plugins-detection aggressive"
+    description: "WordPress deep enumeration: vulnerable plugins, themes, users, backups, config"
+
+  - tool: curl
+    arguments:
+      url: "http://{target}/wp-json/wp/v2/users"
+      additional_args: "-s --max-time 10"
+    description: "WordPress REST API user enumeration"
+
+  - tool: sqlmap
+    arguments:
+      target: "http://{target}/"
+      mode: "crawl"
+      additional_args: "--crawl=3 --batch --random-agent --level=2 --risk=1"
+    description: "Automated SQL injection discovery via crawling with safe risk level"
+
+  - tool: sqlmap
+    arguments:
+      target: "http://{target}/"
+      mode: "forms"
+      additional_args: "--forms --batch --random-agent --level=2 --risk=1"
+    description: "Form-based SQL injection testing on all discovered forms"
+
+  - tool: curl
+    arguments:
+      url: "http://{target}/.env"
+      additional_args: "-s --max-time 10"
+    description: "Check for exposed environment configuration files"

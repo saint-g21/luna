@@ -1,0 +1,341 @@
+{% extends base_template %}
+{% block content %}
+<h2>📝 Scripts & Scraping</h2>
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<div style="display: flex; gap: 20px; height: calc(100vh - 140px);">
+    <!-- Left Panel -->
+    <div style="min-width: 260px; max-width: 300px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto;">
+        <div class="card" style="flex: 1; display: flex; flex-direction: column;">
+            <h3 style="margin-bottom: 16px; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted);">Scripts</h3>
+            <button id="newScriptBtn" style="width: 100%; margin-bottom: 12px; background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)); color: white; border: none;">+ New Script</button>
+            <div id="scriptsList" style="overflow-y: auto; flex: 1;"></div>
+        </div>
+        <div class="card" style="max-height: 200px; overflow-y: auto;">
+            <h3 style="margin-bottom: 12px; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted);">Scraped Data</h3>
+            <div id="scrapedList"></div>
+        </div>
+    </div>
+
+    <!-- Right Panel -->
+    <div style="flex: 1; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; min-width: 0;">
+        <div class="card" id="scriptEditor">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;">
+                <div style="display: flex; gap: 12px; flex-wrap: wrap; flex: 1;">
+                    <input type="text" id="scriptName" placeholder="Script Name" style="width: 200px; margin: 0;">
+                    <input type="text" id="scriptDesc" placeholder="Description" style="width: 300px; margin: 0;">
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button id="saveScriptBtn" style="margin: 0; background: linear-gradient(135deg, var(--accent-green), rgba(16, 185, 129, 0.8)); color: white; border: none;">💾 Save</button>
+                    <button id="runScriptBtn" style="margin: 0; background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)); color: white; border: none;">▶ Run</button>
+                    <button id="deleteScriptBtn" style="margin: 0; background: rgba(244, 63, 94, 0.1); border-color: rgba(244, 63, 94, 0.2); color: var(--accent-red);">🗑 Delete</button>
+                </div>
+            </div>
+            <div style="display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 12px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <label style="margin: 0; font-size: 0.8rem;">Type:</label>
+                    <select id="scriptType" style="width: auto; margin: 0;">
+                        <option value="custom">Custom</option>
+                        <option value="generated">Generated</option>
+                    </select>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <label style="margin: 0; font-size: 0.8rem;">Destination:</label>
+                    <select id="destinationSelect" style="width: auto; margin: 0;">
+                        <option value="">None</option>
+                        <option value="rag">📚 Add to RAG</option>
+                        <option value="llm">🧠 Use as LLM Context</option>
+                    </select>
+                </div>
+            </div>
+            <div style="display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;">
+                <input type="text" id="runUrl" placeholder="URL (optional)" style="flex: 2; margin: 0;">
+                <input type="text" id="runArgs" placeholder="Args (e.g., --verbose)" style="flex: 1; margin: 0;">
+                <input type="number" id="runTimeout" value="30" style="width: 80px; margin: 0;" placeholder="Timeout">
+            </div>
+            <textarea id="scriptEditorCode" style="width: 100%; height: 300px; font-family: var(--font-mono); background: rgba(0,0,0,0.4); border: 1px solid var(--border-subtle); color: var(--text-primary); border-radius: 12px; padding: 16px; font-size: 0.85rem; line-height: 1.6; resize: vertical;"></textarea>
+            <div style="margin-top: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <span style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); font-weight: 600;">Output</span>
+                    <span id="runStatus" style="font-size: 0.85rem; font-weight: 600;"></span>
+                </div>
+                <pre id="scriptOutput" style="background: rgba(0,0,0,0.4); border: 1px solid var(--border-subtle); padding: 16px; border-radius: 12px; max-height: 180px; overflow-y: auto; white-space: pre-wrap; font-size: 0.8rem; color: var(--text-secondary);"></pre>
+            </div>
+        </div>
+
+        <!-- Internal Scraper -->
+        <div class="card">
+            <h3 style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
+                <span style="width: 32px; height: 32px; background: linear-gradient(135deg, var(--accent-purple), var(--accent-cyan)); border-radius: 10px; display: flex; align-items: center; justify-content: center;">🤖</span>
+                Internal Scraper (LLM-Generated)
+            </h3>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px;">
+                <input type="text" id="scrapeUrl" placeholder="URL to scrape" style="flex: 3; min-width: 200px; margin: 0;">
+                <input type="text" id="scrapeInstructions" placeholder="Instructions (e.g., extract all product names)" style="flex: 4; min-width: 200px; margin: 0;">
+                <select id="scrapeProvider" style="flex: 1; min-width: 100px; margin: 0;">
+                    <option value="kaggle">Kaggle</option>
+                    <option value="ollama">Ollama</option>
+                </select>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                <label style="display: flex; align-items: center; gap: 8px; margin: 0; cursor: pointer;">
+                    <input type="checkbox" id="usePlaywright" style="width: auto; margin: 0;">
+                    <span>Use Playwright (JS rendering)</span>
+                </label>
+                <button id="generateScraperBtn" style="margin: 0; background: linear-gradient(135deg, var(--accent-purple), var(--accent-cyan)); color: white; border: none;">Generate Script</button>
+            </div>
+            <div id="generatedScriptContainer" style="display: none; margin-top: 16px;">
+                <h4 style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); margin-bottom: 8px;">Generated Script</h4>
+                <textarea id="generatedScriptCode" style="width: 100%; height: 120px; font-family: var(--font-mono); background: rgba(0,0,0,0.4); border: 1px solid var(--border-subtle); color: var(--text-primary); border-radius: 12px; padding: 12px; font-size: 0.8rem; resize: vertical;"></textarea>
+                <div style="display: flex; gap: 10px; margin-top: 12px;">
+                    <button id="executeGeneratedBtn" style="margin: 0; background: linear-gradient(135deg, var(--accent-green), rgba(16, 185, 129, 0.8)); color: white; border: none;">▶ Execute</button>
+                    <button id="saveGeneratedBtn" style="margin: 0; background: rgba(139, 92, 246, 0.1); border-color: rgba(139, 92, 246, 0.2); color: var(--accent-purple);">💾 Save as Custom</button>
+                </div>
+            </div>
+            <div id="generatedOutput" style="display: none; margin-top: 16px;">
+                <h4 style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); margin-bottom: 8px;">Result</h4>
+                <pre style="background: rgba(0,0,0,0.4); border: 1px solid var(--border-subtle); padding: 16px; border-radius: 12px; max-height: 200px; overflow-y: auto; font-size: 0.8rem; color: var(--text-secondary);"></pre>
+                <div style="display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap;">
+                    <button id="addGeneratedToRagBtn" style="margin: 0; background: rgba(6, 182, 212, 0.1); border-color: rgba(6, 182, 212, 0.2); color: var(--accent-cyan);">📚 Add to RAG</button>
+                    <button id="addGeneratedToLlmBtn" style="margin: 0; background: rgba(139, 92, 246, 0.1); border-color: rgba(139, 92, 246, 0.2); color: var(--accent-purple);">🧠 Use as LLM Context</button>
+                    <button id="discardGeneratedBtn" style="margin: 0; background: rgba(244, 63, 94, 0.1); border-color: rgba(244, 63, 94, 0.2); color: var(--accent-red);">❌ Discard</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentScriptId = null;
+    let currentGeneratedRunId = null;
+
+    async function loadScripts() {
+        const res = await fetchWithCSRF('/api/scripts');
+        const scripts = await res.json();
+        const container = document.getElementById('scriptsList');
+        container.innerHTML = '';
+        for (const s of scripts) {
+            const div = document.createElement('div');
+            div.style.cssText = 'padding: 10px 12px; margin: 4px 0; background: rgba(0,0,0,0.2); border-radius: 10px; cursor: pointer; border: 1px solid transparent; transition: all 0.2s; font-size: 0.85rem;';
+            div.innerHTML = `<strong style="color: var(--text-primary);">${s.name}</strong> <span style="color: var(--text-muted); font-size: 0.75rem;">(${s.type})</span>`;
+            div.onmouseover = function() { this.style.borderColor = 'var(--border-glow)'; this.style.background = 'var(--bg-hover)'; };
+            div.onmouseout = function() { this.style.borderColor = 'transparent'; this.style.background = 'rgba(0,0,0,0.2)'; };
+            div.onclick = () => loadScript(s.id);
+            container.appendChild(div);
+        }
+    }
+
+    async function loadScript(id) {
+        const res = await fetchWithCSRF(`/api/scripts/${id}`);
+        const script = await res.json();
+        if (script.error) return alert(script.error);
+        currentScriptId = script.id;
+        document.getElementById('scriptName').value = script.name;
+        document.getElementById('scriptDesc').value = script.description || '';
+        document.getElementById('scriptType').value = script.type;
+        document.getElementById('scriptEditorCode').value = script.code || '';
+        document.getElementById('scriptOutput').innerText = '';
+        document.getElementById('runStatus').innerText = '';
+    }
+
+    document.getElementById('saveScriptBtn').onclick = async () => {
+        const name = document.getElementById('scriptName').value.trim();
+        const code = document.getElementById('scriptEditorCode').value;
+        const description = document.getElementById('scriptDesc').value;
+        const type = document.getElementById('scriptType').value;
+        if (!name || !code) return alert('Name and code are required');
+        const payload = { name, code, description, type };
+        let url = '/api/scripts', method = 'POST';
+        if (currentScriptId) { url = `/api/scripts/${currentScriptId}`; method = 'PUT'; }
+        const res = await fetchWithCSRF(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        const data = await res.json();
+        if (data.status === 'created' || data.status === 'updated') {
+            if (data.id) currentScriptId = data.id;
+            loadScripts();
+            if (data.id) loadScript(data.id);
+        } else {
+            alert(data.error || 'Error saving script');
+        }
+    };
+
+    document.getElementById('runScriptBtn').onclick = async () => {
+        if (!currentScriptId) return alert('Select or create a script first');
+        const args = document.getElementById('runArgs').value.split(' ').filter(a => a);
+        const timeout = parseInt(document.getElementById('runTimeout').value) || 30;
+        const destination = document.getElementById('destinationSelect').value;
+        const res = await fetchWithCSRF(`/api/scripts/${currentScriptId}/run`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ args, timeout })
+        });
+        const result = await res.json();
+        document.getElementById('scriptOutput').innerText = result.stdout || result.stderr || 'No output';
+        document.getElementById('runStatus').innerHTML = result.returncode === 0 
+            ? '<span style="color: var(--accent-green);">✅ Completed</span>' 
+            : `<span style="color: var(--accent-red);">❌ Error (code ${result.returncode})</span>`;
+        if (destination === 'rag' && result.stdout) {
+            try { const data = JSON.parse(result.stdout); await saveScrapedData(currentScriptId, document.getElementById('runUrl').value, data); await addToRAG(); } catch (e) {}
+        } else if (destination === 'llm' && result.stdout) {
+            try { const data = JSON.parse(result.stdout); await saveScrapedData(currentScriptId, document.getElementById('runUrl').value, data); await addToLLMContext(); } catch (e) {}
+        }
+        loadScrapedList();
+    };
+
+    document.getElementById('deleteScriptBtn').onclick = async () => {
+        if (!currentScriptId || !confirm('Delete this script?')) return;
+        await fetchWithCSRF(`/api/scripts/${currentScriptId}`, { method: 'DELETE' });
+        currentScriptId = null;
+        document.getElementById('scriptName').value = '';
+        document.getElementById('scriptDesc').value = '';
+        document.getElementById('scriptEditorCode').value = '';
+        document.getElementById('scriptOutput').innerText = '';
+        loadScripts();
+    };
+
+    document.getElementById('newScriptBtn').onclick = () => {
+        currentScriptId = null;
+        document.getElementById('scriptName').value = 'New Script';
+        document.getElementById('scriptDesc').value = '';
+        document.getElementById('scriptEditorCode').value = '# Write your Python code here\\nimport requests\\n\\nprint("Hello from custom script!")';
+        document.getElementById('scriptOutput').innerText = '';
+        document.getElementById('runStatus').innerText = '';
+    };
+
+    async function loadScrapedList() {
+        const res = await fetchWithCSRF('/api/scraped_data');
+        const data = await res.json();
+        const container = document.getElementById('scrapedList');
+        container.innerHTML = '';
+        for (const entry of data) {
+            const div = document.createElement('div');
+            div.style.cssText = 'padding: 8px 10px; margin: 4px 0; background: rgba(0,0,0,0.2); border-radius: 8px; font-size: 0.8rem; border: 1px solid transparent; transition: all 0.2s; cursor: pointer;';
+            const dest = entry.destination ? `📌 ${entry.destination}` : '📥 New';
+            div.innerHTML = `<strong style="color: var(--text-primary); font-size: 0.8rem;">${entry.summary || 'Scraped'}</strong> <span style="color: var(--text-muted); font-size: 0.7rem;">${dest}</span>`;
+            div.title = entry.preview;
+            div.onmouseover = function() { this.style.borderColor = 'var(--border-glow)'; };
+            div.onmouseout = function() { this.style.borderColor = 'transparent'; };
+            container.appendChild(div);
+        }
+    }
+
+    async function saveScrapedData(scriptId, url, data) {
+        const summary = data.title || data.name || data.url || 'Scraped data';
+        const res = await fetchWithCSRF('/api/scraped_data', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ script_id: scriptId, url, summary, data })
+        });
+        const result = await res.json();
+        if (result.run_id) currentGeneratedRunId = result.run_id;
+        return result;
+    }
+
+    async function addToRAG(runId) {
+        const id = runId || currentGeneratedRunId;
+        if (!id) return alert('No scraped data to add');
+        const res = await fetchWithCSRF(`/api/scraped_data/${id}/rag`, { method: 'POST' });
+        const result = await res.json();
+        if (result.status === 'added_to_rag') { alert('Added to RAG!'); loadScrapedList(); }
+        else alert(result.error || 'Failed');
+    }
+
+    async function addToLLMContext(runId) {
+        const id = runId || currentGeneratedRunId;
+        if (!id) return alert('No scraped data to add');
+        const res = await fetchWithCSRF(`/api/scraped_data/${id}/llm_context`, { method: 'POST' });
+        const result = await res.json();
+        if (result.status === 'added_to_llm_context') { alert('Added to LLM Context!'); loadScrapedList(); }
+        else alert(result.error || 'Failed');
+    }
+
+    document.getElementById('generateScraperBtn').onclick = async () => {
+        const url = document.getElementById('scrapeUrl').value.trim();
+        const instructions = document.getElementById('scrapeInstructions').value.trim();
+        const provider = document.getElementById('scrapeProvider').value;
+        const usePlaywright = document.getElementById('usePlaywright').checked;
+        if (!url || !instructions) return alert('URL and instructions are required');
+        const res = await fetchWithCSRF('/api/scrape/internal', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, instructions, provider, use_playwright: usePlaywright })
+        });
+        const result = await res.json();
+        if (result.code) {
+            document.getElementById('generatedScriptCode').value = result.code;
+            document.getElementById('generatedScriptContainer').style.display = 'block';
+            document.getElementById('generatedOutput').style.display = 'none';
+            if (result.script_id) {
+                const name = `Generated Scraper - ${new Date().toLocaleString()}`;
+                const desc = `URL: ${url}\\nInstructions: ${instructions}`;
+                const saveRes = await fetchWithCSRF('/api/scripts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, code: result.code, description: desc, type: 'generated' })
+                });
+                const saveData = await saveRes.json();
+                if (saveData.id) { currentScriptId = saveData.id; loadScript(currentScriptId); loadScripts(); }
+            }
+        } else {
+            alert(result.error || 'Failed to generate script');
+        }
+    };
+
+    document.getElementById('executeGeneratedBtn').onclick = async () => {
+        if (!currentScriptId) return alert('No script to execute');
+        const timeout = parseInt(document.getElementById('runTimeout').value) || 30;
+        const args = document.getElementById('runArgs').value.split(' ').filter(a => a);
+        const res = await fetchWithCSRF(`/api/scripts/${currentScriptId}/run`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ args, timeout })
+        });
+        const result = await res.json();
+        const outputDiv = document.getElementById('generatedOutput');
+        outputDiv.style.display = 'block';
+        outputDiv.querySelector('pre').innerText = result.stdout || result.stderr || 'No output';
+        try {
+            const data = JSON.parse(result.stdout);
+            const url = document.getElementById('scrapeUrl').value;
+            await saveScrapedData(currentScriptId, url, data);
+            loadScrapedList();
+            document.getElementById('addGeneratedToRagBtn').style.display = 'inline-block';
+            document.getElementById('addGeneratedToLlmBtn').style.display = 'inline-block';
+        } catch (e) {
+            document.getElementById('addGeneratedToRagBtn').style.display = 'none';
+            document.getElementById('addGeneratedToLlmBtn').style.display = 'none';
+        }
+    };
+
+    document.getElementById('saveGeneratedBtn').onclick = async () => {
+        const code = document.getElementById('generatedScriptCode').value;
+        const name = prompt('Name for this script:', 'Generated Scraper');
+        if (!name) return;
+        const desc = prompt('Description:', '');
+        const res = await fetchWithCSRF('/api/scripts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, code, description: desc, type: 'custom' })
+        });
+        const data = await res.json();
+        if (data.id) { currentScriptId = data.id; loadScript(currentScriptId); loadScripts(); alert('Script saved!'); }
+        else alert(data.error || 'Error');
+    };
+
+    document.getElementById('addGeneratedToRagBtn').onclick = async () => { await addToRAG(); };
+    document.getElementById('addGeneratedToLlmBtn').onclick = async () => { await addToLLMContext(); };
+    document.getElementById('discardGeneratedBtn').onclick = () => {
+        document.getElementById('generatedOutput').style.display = 'none';
+        currentGeneratedRunId = null;
+    };
+
+    loadScripts();
+    loadScrapedList();
+    setTimeout(async () => {
+        const res = await fetchWithCSRF('/api/scripts');
+        const scripts = await res.json();
+        if (scripts.length === 0) {
+            document.getElementById('scriptEditorCode').value = `import requests\\n\\n# Your scraping code here\\nresponse = requests.get('https://example.com')\\nprint(response.status_code)\\nprint(response.text[:200])`;
+            document.getElementById('scriptName').value = 'Example Scraper';
+        }
+    }, 500);
+</script>
+{% endblock %}

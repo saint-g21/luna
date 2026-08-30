@@ -1,0 +1,78 @@
+steps:
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "-sV -sC -O"
+      ports: ""
+      additional_args: "-T4 -p-"
+
+  - tool: enum4linux
+    arguments:
+      target: "{target}"
+      additional_args: "-a"
+
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "-sV"
+      ports: "80,443,8080,8443"
+      additional_args: "-T4"
+
+  - tool: gobuster
+    arguments:
+      url: "http://{target}"
+      mode: "dir"
+      wordlist: "/usr/share/seclists/Discovery/Web-Content/common.txt"
+      additional_args: "-t 50 -x php,txt,html"
+
+  - tool: gobuster
+    arguments:
+      url: "https://{target}"
+      mode: "dir"
+      wordlist: "/usr/share/seclists/Discovery/Web-Content/common.txt"
+      additional_args: "-t 50 -x php,txt,html -k"
+
+  - tool: nikto
+    arguments:
+      target: "{target}"
+      additional_args: "-ssl"
+
+  - tool: sqlmap
+    arguments:
+      target: "http://{target}"
+      additional_args: "--batch --crawl=2 --random-agent"
+
+  - tool: wpscan
+    arguments:
+      url: "http://{target}"
+      additional_args: "--enumerate vp,vt,tt,cb,dbe,u,m"
+
+  - tool: hydra
+    arguments:
+      target: "{target}"
+      service: "ssh"
+      userlist: "/usr/share/seclists/Usernames/top-usernames-shortlist.txt"
+      passlist: "/usr/share/seclists/Passwords/Common-Credentials/10k-most-common.txt"
+      additional_args: "-t 4"
+
+  - tool: hydra
+    arguments:
+      target: "{target}"
+      service: "ftp"
+      userlist: "/usr/share/seclists/Usernames/top-usernames-shortlist.txt"
+      passlist: "/usr/share/seclists/Passwords/Common-Credentials/10k-most-common.txt"
+      additional_args: "-t 4"
+
+  - tool: hydra
+    arguments:
+      target: "{target}"
+      service: "http-post-form"
+      userlist: "/usr/share/seclists/Usernames/top-usernames-shortlist.txt"
+      passlist: "/usr/share/seclists/Passwords/Common-Credentials/10k-most-common.txt"
+      additional_args: '"/login.php:user=^USER^&pass=^PASS^:Login failed" -t 4'
+
+  - tool: netcat
+    arguments:
+      target: "{target}"
+      ports: "21,22,23,25,80,443,3306,3389"
+      additional_args: "-v -w 2"

@@ -1,0 +1,1179 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Moonshot Agent</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <style>
+        /* ── RESET & BASE ── */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #05080f;
+            --bg-secondary: #0a0f1c;
+            --bg-card: rgba(13, 18, 30, 0.75);
+            --bg-hover: rgba(20, 28, 48, 0.6);
+            --border-subtle: rgba(100, 200, 255, 0.08);
+            --border-glow: rgba(6, 182, 212, 0.25);
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent-cyan: #06b6d4;
+            --accent-cyan-glow: rgba(6, 182, 212, 0.4);
+            --accent-purple: #8b5cf6;
+            --accent-green: #10b981;
+            --accent-red: #f43f5e;
+            --font-ui: 'Inter', system-ui, -apple-system, sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 16px;
+            --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.4);
+            --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.6);
+            --transition-fast: 0.15s ease;
+            --transition-base: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            --sidebar-width: 260px;
+        }
+
+        body.light {
+            --bg-primary: #f0f4f8;
+            --bg-secondary: #e2e8f0;
+            --bg-card: rgba(255, 255, 255, 0.85);
+            --bg-hover: rgba(241, 245, 249, 0.8);
+            --border-subtle: rgba(15, 23, 42, 0.08);
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --text-muted: #94a3b8;
+        }
+
+        body {
+            font-family: var(--font-ui);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+            line-height: 1.6;
+        }
+
+        /* ── GRID BACKGROUND ── */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(6, 182, 212, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(6, 182, 212, 0.03) 1px, transparent 1px);
+            background-size: 50px 50px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        body::after {
+            content: '';
+            position: fixed;
+            top: -50%;
+            left: -20%;
+            width: 70%;
+            height: 100%;
+            background: radial-gradient(ellipse, rgba(139, 92, 246, 0.06) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* ── SIDEBAR (DESKTOP) ── */
+        .sidebar {
+            position: fixed;
+            right: 0;
+            top: 0;
+            height: 100vh;
+            width: var(--sidebar-width);
+            background: linear-gradient(180deg, rgba(10, 15, 28, 0.95) 0%, rgba(8, 12, 22, 0.98) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-left: 1px solid var(--border-subtle);
+            display: flex;
+            flex-direction: column;
+            z-index: 100;
+            transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), visibility 0s 0.35s;
+            overflow: hidden;
+            box-shadow: -4px 0 30px rgba(0, 0, 0, 0.4);
+        }
+
+        .sidebar.hidden {
+            transform: translateX(100%);
+            visibility: hidden;
+            transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), visibility 0s 0s;
+        }
+
+        .sidebar-header {
+            padding: 20px 16px 14px 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-bottom: 1px solid var(--border-subtle);
+            flex-shrink: 0;
+        }
+
+        .sidebar-header h2 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            white-space: nowrap;
+            flex: 1;
+        }
+
+        .sidebar-toggle-btn {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+            width: 30px;
+            height: 30px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            transition: all var(--transition-fast);
+            flex-shrink: 0;
+        }
+
+        .sidebar-toggle-btn:hover {
+            background: rgba(6, 182, 212, 0.15);
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+        }
+
+        #themeToggle {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+            width: 30px;
+            height: 30px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+            transition: all var(--transition-fast);
+            flex-shrink: 0;
+        }
+
+        #themeToggle:hover {
+            background: rgba(139, 92, 246, 0.15);
+            border-color: var(--accent-purple);
+            color: var(--accent-purple);
+        }
+
+        .sidebar-nav {
+            flex: 1;
+            padding: 16px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            overflow-y: auto;
+        }
+
+        .sidebar-nav a {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 11px 14px;
+            border-radius: var(--radius-md);
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.88rem;
+            font-weight: 500;
+            transition: all var(--transition-fast);
+            position: relative;
+        }
+
+        .sidebar-nav a:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .sidebar-nav a.active {
+            background: linear-gradient(90deg, rgba(6, 182, 212, 0.12), transparent);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(6, 182, 212, 0.15);
+        }
+
+        .sidebar-nav a span {
+            white-space: nowrap;
+        }
+
+        .sidebar-footer {
+            padding: 18px 20px 20px;
+            border-top: 1px solid var(--border-subtle);
+            background: rgba(6, 182, 212, 0.03);
+            flex-shrink: 0;
+        }
+
+        .sidebar-footer h3 {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--accent-cyan);
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
+        .sidebar-footer input[type="text"] {
+            width: 100%;
+            padding: 9px 12px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-family: var(--font-mono);
+            font-size: 0.82rem;
+            transition: all var(--transition-fast);
+        }
+
+        .sidebar-footer input[type="text"]:focus {
+            outline: none;
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.1);
+        }
+
+        .sidebar-footer .btn-row {
+            display: flex;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .sidebar-footer .btn-row button {
+            flex: 1;
+            padding: 9px 12px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+            border: none;
+            border-radius: var(--radius-sm);
+            color: #fff;
+            font-weight: 600;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+        }
+
+        .sidebar-footer .btn-row button:hover {
+            box-shadow: 0 4px 20px var(--accent-cyan-glow);
+            transform: translateY(-1px);
+        }
+
+        #globalTargetDisplay,
+        #workspaceDisplay {
+            font-size: 0.72rem !important;
+            color: var(--text-muted) !important;
+            font-family: var(--font-mono);
+            margin-top: 6px;
+            word-break: break-all;
+        }
+
+        #newWorkspaceBtn {
+            background: transparent !important;
+            border: 1px dashed var(--border-subtle) !important;
+            color: var(--text-secondary) !important;
+            font-size: 0.65rem !important;
+            padding: 3px 10px !important;
+            width: auto !important;
+            margin-top: 0 !important;
+            flex: 0 0 auto !important;
+            box-shadow: none !important;
+        }
+
+        #newWorkspaceBtn:hover {
+            border-color: var(--accent-cyan) !important;
+            color: var(--accent-cyan) !important;
+            transform: none !important;
+        }
+
+        .ws-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-top: 6px;
+        }
+
+        /* ── FLOATING TOGGLE ── */
+        .sidebar-toggle-floating {
+            position: fixed;
+            right: 14px;
+            top: 14px;
+            z-index: 99;
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-primary);
+            font-size: 1.3rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: var(--shadow-md);
+            transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), visibility 0s 0.3s;
+            opacity: 0;
+            pointer-events: none;
+            transform: scale(0.85) translateX(-10px);
+        }
+
+        .sidebar-toggle-floating.visible {
+            opacity: 1;
+            pointer-events: all;
+            transform: scale(1) translateX(0);
+            transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), visibility 0s 0s;
+        }
+
+        .sidebar-toggle-floating:hover {
+            background: rgba(6, 182, 212, 0.15);
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 24px var(--accent-cyan-glow), var(--shadow-md);
+            transform: scale(1.05);
+        }
+
+        /* ── MAIN CONTENT ── */
+        .main-content {
+            margin-right: var(--sidebar-width);
+            padding: 28px 36px 48px;
+            min-height: 100vh;
+            position: relative;
+            z-index: 1;
+            transition: margin-right 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .sidebar.hidden~.main-content {
+            margin-right: 0;
+        }
+
+        /* ── MOBILE MENU (slide-out) ── */
+        .mobile-menu-btn {
+            display: none;
+            position: fixed;
+            top: 14px;
+            left: 14px;
+            z-index: 200;
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-primary);
+            font-size: 1.3rem;
+            cursor: pointer;
+            align-items: center;
+            justify-content: center;
+            box-shadow: var(--shadow-md);
+            transition: all var(--transition-fast);
+        }
+
+        .mobile-menu-btn:hover {
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 20px var(--accent-cyan-glow);
+        }
+
+        .mobile-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            z-index: 149;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+
+        .mobile-overlay.open {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .mobile-menu {
+            display: none;
+            position: fixed;
+            left: 0;
+            top: 0;
+            height: 100vh;
+            width: 280px;
+            background: linear-gradient(180deg, rgba(10, 15, 28, 0.98), rgba(8, 12, 22, 0.99));
+            backdrop-filter: blur(30px);
+            -webkit-backdrop-filter: blur(30px);
+            z-index: 150;
+            transform: translateX(-100%);
+            transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow-y: auto;
+            border-right: 1px solid var(--border-subtle);
+            box-shadow: 4px 0 30px rgba(0, 0, 0, 0.5);
+        }
+
+        .mobile-menu.open {
+            transform: translateX(0);
+        }
+
+        .mobile-menu .mobile-menu-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 18px 20px 14px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .mobile-menu .mobile-menu-header h2 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .mobile-menu .close-btn {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+            width: 32px;
+            height: 32px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all var(--transition-fast);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .mobile-menu .close-btn:hover {
+            background: rgba(244, 63, 94, 0.15);
+            border-color: var(--accent-red);
+            color: var(--accent-red);
+        }
+
+        .mobile-menu .mobile-nav {
+            padding: 12px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .mobile-menu .mobile-nav a {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 14px;
+            border-radius: var(--radius-md);
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all var(--transition-fast);
+        }
+
+        .mobile-menu .mobile-nav a:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .mobile-menu .mobile-nav a.active {
+            background: linear-gradient(90deg, rgba(6, 182, 212, 0.12), transparent);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(6, 182, 212, 0.15);
+        }
+
+        .mobile-menu .mobile-footer {
+            padding: 16px 20px 24px;
+            border-top: 1px solid var(--border-subtle);
+            margin-top: 8px;
+        }
+
+        .mobile-menu .mobile-footer h3 {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--accent-cyan);
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
+        .mobile-menu .mobile-footer input[type="text"] {
+            width: 100%;
+            padding: 9px 12px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-family: var(--font-mono);
+            font-size: 0.82rem;
+            transition: all var(--transition-fast);
+        }
+
+        .mobile-menu .mobile-footer input[type="text"]:focus {
+            outline: none;
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.1);
+        }
+
+        .mobile-menu .mobile-footer button {
+            width: 100%;
+            padding: 9px;
+            margin-top: 8px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+            border: none;
+            border-radius: var(--radius-sm);
+            color: #fff;
+            font-weight: 600;
+            font-size: 0.82rem;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+        }
+
+        .mobile-menu .mobile-footer button:hover {
+            box-shadow: 0 4px 20px var(--accent-cyan-glow);
+            transform: translateY(-1px);
+        }
+
+        #mobileGlobalTargetDisplay {
+            font-size: 0.72rem !important;
+            color: var(--text-muted) !important;
+            font-family: var(--font-mono);
+            margin-top: 6px;
+        }
+
+        /* ── RESPONSIVE ── */
+        @media (max-width: 768px) {
+            .sidebar {
+                display: none !important;
+            }
+
+            .sidebar-toggle-floating {
+                display: none !important;
+            }
+
+            .mobile-menu-btn {
+                display: flex !important;
+            }
+
+            .mobile-overlay {
+                display: block !important;
+            }
+
+            .mobile-menu {
+                display: block !important;
+            }
+
+            .main-content {
+                margin-right: 0 !important;
+                padding: 80px 18px 100px !important;
+            }
+
+            /* Bottom nav for mobile */
+            .bottom-nav {
+                display: flex !important;
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                background: var(--bg-card);
+                backdrop-filter: blur(20px);
+                -webkit-backdrop-filter: blur(20px);
+                border-top: 1px solid var(--border-subtle);
+                z-index: 50;
+                padding: 6px 0 env(safe-area-inset-bottom, 6px) 0;
+                justify-content: space-around;
+                align-items: center;
+                box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
+            }
+
+            .bottom-nav .nav-item {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 2px;
+                padding: 4px 10px;
+                text-decoration: none;
+                color: var(--text-muted);
+                font-size: 0.6rem;
+                font-weight: 500;
+                transition: all var(--transition-fast);
+                border-radius: var(--radius-sm);
+                min-width: 44px;
+            }
+
+            .bottom-nav .nav-item .nav-icon {
+                font-size: 1.2rem;
+                line-height: 1.2;
+            }
+
+            .bottom-nav .nav-item .nav-label {
+                font-size: 0.55rem;
+                letter-spacing: 0.02em;
+            }
+
+            .bottom-nav .nav-item.active {
+                color: var(--accent-cyan);
+            }
+
+            .bottom-nav .nav-item.active .nav-icon {
+                transform: scale(1.1);
+            }
+
+            .bottom-nav .nav-item:hover {
+                color: var(--text-primary);
+            }
+        }
+
+        @media (min-width: 769px) {
+            .bottom-nav {
+                display: none !important;
+            }
+            .mobile-menu-btn,
+            .mobile-overlay,
+            .mobile-menu {
+                display: none !important;
+            }
+        }
+
+        /* ── UTILITY OVERRIDES ── */
+        .target-glow {
+            animation: targetPulse 2.2s ease-in-out infinite;
+        }
+
+        @keyframes targetPulse {
+            0%,
+            100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.4;
+            }
+        }
+
+        /* ── SCROLLBAR ── */
+        ::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(100, 200, 255, 0.12);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(100, 200, 255, 0.25);
+        }
+
+        /* ── CARD STYLES (minimal) ── */
+        .card {
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            margin-bottom: 20px;
+            transition: all var(--transition-base);
+        }
+
+        .card:hover {
+            border-color: var(--border-glow);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--accent-cyan), var(--accent-purple), transparent);
+            opacity: 0.4;
+        }
+
+        .card {
+            position: relative;
+            overflow: hidden;
+        }
+
+        input[type="text"]:not(.chat-input),
+        input[type="password"],
+        input[type="number"],
+        textarea:not(.chat-textarea),
+        select {
+            padding: 11px 14px;
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            color: var(--text-primary);
+            font-family: var(--font-ui);
+            font-size: 0.88rem;
+            transition: all var(--transition-fast);
+            width: 100%;
+        }
+
+        input:focus,
+        textarea:focus,
+        select:focus {
+            outline: none;
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.1);
+        }
+
+        button:not(.mobile-menu-btn):not(.close-btn):not(.sidebar-toggle-btn):not(#themeToggle):not(#newWorkspaceBtn) {
+            padding: 10px 20px;
+            background: linear-gradient(135deg, rgba(6, 182, 212, 0.15), rgba(139, 92, 246, 0.15));
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            color: var(--text-primary);
+            font-family: var(--font-ui);
+            font-weight: 600;
+            font-size: 0.88rem;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        button:hover:not(.mobile-menu-btn):not(.close-btn):not(.sidebar-toggle-btn):not(#themeToggle):not(#newWorkspaceBtn) {
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 20px var(--accent-cyan-glow);
+            transform: translateY(-1px);
+        }
+
+        .flex {
+            display: flex;
+            gap: 16px;
+        }
+        .flex-col {
+            flex-direction: column;
+        }
+        .gap-2 {
+            gap: 8px;
+        }
+        .items-center {
+            align-items: center;
+        }
+        .justify-between {
+            justify-content: space-between;
+        }
+        .flex-1 {
+            flex: 1;
+        }
+        .text-muted {
+            color: var(--text-muted);
+        }
+        .text-sm {
+            font-size: 0.82rem;
+        }
+        .font-mono {
+            font-family: var(--font-mono);
+        }
+        .mt-2 {
+            margin-top: 8px;
+        }
+        .mt-3 {
+            margin-top: 14px;
+        }
+        .mb-2 {
+            margin-bottom: 8px;
+        }
+        .w-full {
+            width: 100%;
+        }
+    </style>
+    {% block head %}{% endblock %}
+</head>
+<body>
+
+    <!-- ─── DESKTOP SIDEBAR ─── -->
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h2>🦞 Moonshot <span id="targetBadge" class="target-glow" style="margin-left:4px; font-size:0.65rem; color:var(--accent-cyan);"></span></h2>
+            <button class="sidebar-toggle-btn" id="sidebarCloseBtn" title="Close sidebar">✕</button>
+            <button id="themeToggle" title="Toggle theme">🌓</button>
+        </div>
+        <div class="sidebar-nav">
+            <a href="/chat" class="{% if request.endpoint == 'chat' %}active{% endif %}" target="_self">💬 <span>Chat</span></a>
+            <a href="/tools" class="{% if request.endpoint == 'tools' %}active{% endif %}" target="_self">🔧 <span>Tools</span></a>
+            <a href="/session" class="{% if request.endpoint == 'session' %}active{% endif %}" target="_self">📝 <span>Session</span></a>
+            <a href="/playbooks" class="{% if request.endpoint == 'playbooks' %}active{% endif %}" target="_self">📚 <span>Playbooks</span></a>
+            <a href="/health" class="{% if request.endpoint == 'health' %}active{% endif %}" target="_self">💚 <span>Health</span></a>
+            <a href="/rag" class="{% if request.endpoint == 'rag' %}active{% endif %}" target="_self">📄 <span>RAG</span></a>
+            <a href="/scripts" class="{% if request.endpoint == 'scripts' %}active{% endif %}" target="_self">📝 <span>Scripts</span></a>
+            <a href="/dashboard" class="{% if request.endpoint == 'dashboard' %}active{% endif %}" target="_self">📊 <span>Dashboard</span></a>
+            <a href="/users" class="{% if request.endpoint == 'users' %}active{% endif %}" target="_self">👤 <span>Users</span></a>
+        </div>
+        <div class="sidebar-footer">
+            <h3>🎯 Target</h3>
+            <input type="text" id="globalTargetInput" placeholder="e.g., 10.2.21.12">
+            <div class="btn-row">
+                <button id="setTargetBtn">Set Target</button>
+            </div>
+            <div id="globalTargetDisplay">Current: (none)</div>
+            <div class="ws-row">
+                <span id="workspaceDisplay" style="font-size:0.72rem; color:var(--text-muted); font-family:var(--font-mono);">Workspace: default</span>
+                <button id="newWorkspaceBtn">+ New</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── FLOATING TOGGLE (shows when sidebar is hidden) ─── -->
+    <button class="sidebar-toggle-floating" id="floatingToggle" title="Open sidebar">☰</button>
+
+    <!-- ─── MOBILE HAMBURGER ─── -->
+    <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Toggle menu">☰</button>
+
+    <!-- ─── MOBILE OVERLAY ─── -->
+    <div class="mobile-overlay" id="mobileOverlay"></div>
+
+    <!-- ─── MOBILE SLIDE-OUT MENU ─── -->
+    <div class="mobile-menu" id="mobileMenu">
+        <div class="mobile-menu-header">
+            <h2>🦞 Moonshot</h2>
+            <button class="close-btn" id="mobileMenuClose">✕</button>
+        </div>
+        <div class="mobile-nav">
+            <a href="/chat" class="{% if request.endpoint == 'chat' %}active{% endif %}" target="_self">💬 Chat</a>
+            <a href="/tools" class="{% if request.endpoint == 'tools' %}active{% endif %}" target="_self">🔧 Tools</a>
+            <a href="/session" class="{% if request.endpoint == 'session' %}active{% endif %}" target="_self">📝 Session</a>
+            <a href="/playbooks" class="{% if request.endpoint == 'playbooks' %}active{% endif %}" target="_self">📚 Playbooks</a>
+            <a href="/health" class="{% if request.endpoint == 'health' %}active{% endif %}" target="_self">💚 Health</a>
+            <a href="/rag" class="{% if request.endpoint == 'rag' %}active{% endif %}" target="_self">📄 RAG</a>
+            <a href="/scripts" class="{% if request.endpoint == 'scripts' %}active{% endif %}" target="_self">📝 Scripts</a>
+            <a href="/dashboard" class="{% if request.endpoint == 'dashboard' %}active{% endif %}" target="_self">📊 Dashboard</a>
+            <a href="/users" class="{% if request.endpoint == 'users' %}active{% endif %}" target="_self">👤 Users</a>
+        </div>
+        <div class="mobile-footer">
+            <h3>🎯 Target</h3>
+            <input type="text" id="mobileGlobalTargetInput" placeholder="e.g., 10.2.21.12">
+            <button id="mobileSetTargetBtn">Set Target</button>
+            <div id="mobileGlobalTargetDisplay">Current: (none)</div>
+            <div style="margin-top:12px; display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                <span id="mobileWorkspaceDisplay" style="font-size:0.72rem; color:var(--text-muted); font-family:var(--font-mono);">Workspace: default</span>
+                <button id="mobileNewWorkspaceBtn" style="background:transparent !important; border:1px dashed var(--border-subtle) !important; color:var(--text-secondary) !important; font-size:0.65rem !important; padding:3px 10px !important; width:auto !important; margin-top:0 !important; box-shadow:none !important;">+ New</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── MAIN CONTENT ─── -->
+    <div class="main-content" id="mainContent">
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- ─── BOTTOM NAV (mobile) ─── -->
+    <div class="bottom-nav">
+        <a href="/chat" class="nav-item {% if request.endpoint == 'chat' %}active{% endif %}" target="_self">
+            <span class="nav-icon">💬</span>
+            <span class="nav-label">Chat</span>
+        </a>
+        <a href="/tools" class="nav-item {% if request.endpoint == 'tools' %}active{% endif %}" target="_self">
+            <span class="nav-icon">🔧</span>
+            <span class="nav-label">Tools</span>
+        </a>
+        <a href="/session" class="nav-item {% if request.endpoint == 'session' %}active{% endif %}" target="_self">
+            <span class="nav-icon">📝</span>
+            <span class="nav-label">Session</span>
+        </a>
+        <a href="/health" class="nav-item {% if request.endpoint == 'health' %}active{% endif %}" target="_self">
+            <span class="nav-icon">💚</span>
+            <span class="nav-label">Health</span>
+        </a>
+        <a href="/playbooks" class="nav-item {% if request.endpoint == 'playbooks' %}active{% endif %}" target="_self">
+            <span class="nav-icon">📚</span>
+            <span class="nav-label">Playbooks</span>
+        </a>
+    </div>
+
+    <!-- ─── JAVASCRIPT ─── -->
+    <script>
+        (function() {
+            'use strict';
+
+            // ── Helpers ──
+            function getGlobalTarget() {
+                return localStorage.getItem('globalTarget') || '';
+            }
+
+            function setGlobalTarget(newTarget) {
+                if (newTarget) {
+                    localStorage.setItem('globalTarget', newTarget.trim());
+                    refreshAllTargets();
+                    window.dispatchEvent(new StorageEvent('storage', { key: 'globalTarget', newValue: newTarget.trim() }));
+                }
+            }
+
+            function refreshAllTargets() {
+                const target = getGlobalTarget();
+                const display = target ? '🎯 ' + target : '';
+
+                // Desktop badge
+                const badge = document.getElementById('targetBadge');
+                if (badge) badge.textContent = display;
+
+                // Desktop display & input
+                const disp = document.getElementById('globalTargetDisplay');
+                const inp = document.getElementById('globalTargetInput');
+                if (disp) disp.textContent = target ? 'Current: ' + target : 'Current: (none)';
+                if (inp) inp.value = target;
+
+                // Mobile display & input
+                const mdisp = document.getElementById('mobileGlobalTargetDisplay');
+                const minp = document.getElementById('mobileGlobalTargetInput');
+                if (mdisp) mdisp.textContent = target ? 'Current: ' + target : 'Current: (none)';
+                if (minp) minp.value = target;
+            }
+
+            // ── Sidebar ──
+            function closeSidebar() {
+                const sidebar = document.getElementById('sidebar');
+                const floating = document.getElementById('floatingToggle');
+                if (sidebar) sidebar.classList.add('hidden');
+                if (floating) floating.classList.add('visible');
+                localStorage.setItem('sidebarHidden', 'true');
+            }
+
+            function openSidebar() {
+                const sidebar = document.getElementById('sidebar');
+                const floating = document.getElementById('floatingToggle');
+                if (sidebar) sidebar.classList.remove('hidden');
+                if (floating) floating.classList.remove('visible');
+                localStorage.setItem('sidebarHidden', 'false');
+            }
+
+            // ── Mobile Menu ──
+            function openMobileMenu() {
+                const menu = document.getElementById('mobileMenu');
+                const overlay = document.getElementById('mobileOverlay');
+                const btn = document.getElementById('mobileMenuBtn');
+                if (menu) menu.classList.add('open');
+                if (overlay) overlay.classList.add('open');
+                if (btn) btn.textContent = '✕';
+                document.body.style.overflow = 'hidden';
+            }
+
+            function closeMobileMenu() {
+                const menu = document.getElementById('mobileMenu');
+                const overlay = document.getElementById('mobileOverlay');
+                const btn = document.getElementById('mobileMenuBtn');
+                if (menu) menu.classList.remove('open');
+                if (overlay) overlay.classList.remove('open');
+                if (btn) btn.textContent = '☰';
+                document.body.style.overflow = '';
+            }
+
+            function toggleMobileMenu() {
+                const menu = document.getElementById('mobileMenu');
+                if (!menu) return;
+                if (menu.classList.contains('open')) {
+                    closeMobileMenu();
+                } else {
+                    openMobileMenu();
+                }
+            }
+
+            // ── Theme ──
+            function toggleTheme() {
+                document.body.classList.toggle('light');
+                localStorage.setItem('theme', document.body.classList.contains('light') ? 'light' : 'dark');
+            }
+
+            // ── Workspaces ──
+            async function loadWorkspaces() {
+                try {
+                    const res = await fetch('/api/workspaces');
+                    const workspaces = await res.json();
+                    const current = localStorage.getItem('workspace') || 'default';
+                    let displayName = current;
+                    for (const w of workspaces) {
+                        if (w && w.id === current) { displayName = w.name || w.id; break; }
+                    }
+                    const el1 = document.getElementById('workspaceDisplay');
+                    if (el1) el1.textContent = 'Workspace: ' + displayName;
+                    const el2 = document.getElementById('mobileWorkspaceDisplay');
+                    if (el2) el2.textContent = 'Workspace: ' + displayName;
+                } catch (_) { /* ignore */ }
+            }
+
+            // ── DOM Ready ──
+            document.addEventListener('DOMContentLoaded', function() {
+
+                // Restore theme
+                if (localStorage.getItem('theme') === 'light') {
+                    document.body.classList.add('light');
+                }
+
+                // Restore sidebar state
+                if (localStorage.getItem('sidebarHidden') === 'true') {
+                    const sidebar = document.getElementById('sidebar');
+                    const floating = document.getElementById('floatingToggle');
+                    if (sidebar) sidebar.classList.add('hidden');
+                    if (floating) floating.classList.add('visible');
+                } else {
+                    const floating = document.getElementById('floatingToggle');
+                    if (floating) floating.classList.remove('visible');
+                }
+
+                refreshAllTargets();
+                loadWorkspaces();
+
+                // ── Sidebar close ──
+                document.getElementById('sidebarCloseBtn').addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    closeSidebar();
+                });
+
+                // ── Floating toggle ──
+                document.getElementById('floatingToggle').addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    openSidebar();
+                });
+
+                // ── Desktop Set Target ──
+                const setBtn = document.getElementById('setTargetBtn');
+                const targetInput = document.getElementById('globalTargetInput');
+                if (setBtn && targetInput) {
+                    setBtn.addEventListener('click', function() {
+                        const val = targetInput.value.trim();
+                        if (val) {
+                            setGlobalTarget(val);
+                            setBtn.textContent = '✅ Set';
+                            setTimeout(function() { setBtn.textContent = 'Set Target'; }, 1200);
+                        }
+                    });
+                    targetInput.addEventListener('keypress', function(e) {
+                        if (e.key === 'Enter') setBtn.click();
+                    });
+                }
+
+                // ── Mobile Set Target ──
+                const mobileSetBtn = document.getElementById('mobileSetTargetBtn');
+                const mobileTargetInput = document.getElementById('mobileGlobalTargetInput');
+                if (mobileSetBtn && mobileTargetInput) {
+                    mobileSetBtn.addEventListener('click', function() {
+                        const val = mobileTargetInput.value.trim();
+                        if (val) {
+                            setGlobalTarget(val);
+                            closeMobileMenu();
+                            mobileSetBtn.textContent = '✅ Set';
+                            setTimeout(function() { mobileSetBtn.textContent = 'Set Target'; }, 1200);
+                        }
+                    });
+                    mobileTargetInput.addEventListener('keypress', function(e) {
+                        if (e.key === 'Enter') mobileSetBtn.click();
+                    });
+                }
+
+                // ── New Workspace (desktop) ──
+                document.getElementById('newWorkspaceBtn').addEventListener('click', async function() {
+                    const name = prompt('Workspace name:');
+                    if (!name) return;
+                    try {
+                        const res = await fetch('/api/workspaces', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ name })
+                        });
+                        const data = await res.json();
+                        if (data.id) {
+                            localStorage.setItem('workspace', data.id);
+                            loadWorkspaces();
+                            localStorage.setItem('workspace_created', Date.now().toString());
+                            alert('Workspace created!');
+                        } else {
+                            alert('Failed: ' + (data.error || 'Unknown error'));
+                        }
+                    } catch (_) {
+                        alert('Error creating workspace');
+                    }
+                });
+
+                // ── New Workspace (mobile) ──
+                document.getElementById('mobileNewWorkspaceBtn').addEventListener('click', async function() {
+                    const name = prompt('Workspace name:');
+                    if (!name) return;
+                    try {
+                        const res = await fetch('/api/workspaces', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ name })
+                        });
+                        const data = await res.json();
+                        if (data.id) {
+                            localStorage.setItem('workspace', data.id);
+                            loadWorkspaces();
+                            localStorage.setItem('workspace_created', Date.now().toString());
+                            alert('Workspace created!');
+                            closeMobileMenu();
+                        } else {
+                            alert('Failed: ' + (data.error || 'Unknown error'));
+                        }
+                    } catch (_) {
+                        alert('Error creating workspace');
+                    }
+                });
+
+                // ── Theme toggle ──
+                document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+
+                // ── Mobile menu ──
+                document.getElementById('mobileMenuBtn').addEventListener('click', toggleMobileMenu);
+                document.getElementById('mobileOverlay').addEventListener('click', closeMobileMenu);
+                document.getElementById('mobileMenuClose').addEventListener('click', closeMobileMenu);
+
+                // ── Close mobile menu on Escape ──
+                document.addEventListener('keydown', function(e) {
+                    if (e.key === 'Escape') closeMobileMenu();
+                });
+
+                // ── Close mobile menu on resize to desktop ──
+                window.addEventListener('resize', function() {
+                    if (window.innerWidth > 768) closeMobileMenu();
+                });
+
+                // ── Storage sync ──
+                window.addEventListener('storage', function(e) {
+                    if (e.key === 'globalTarget') refreshAllTargets();
+                    if (e.key === 'workspace_created') loadWorkspaces();
+                });
+
+                // ── Close mobile menu when a nav link is clicked ──
+                document.querySelectorAll('.mobile-nav a').forEach(function(link) {
+                    link.addEventListener('click', closeMobileMenu);
+                });
+
+                // ── Close sidebar when a nav link is clicked (desktop) ──
+                document.querySelectorAll('.sidebar-nav a').forEach(function(link) {
+                    link.addEventListener('click', function() {
+                        if (window.innerWidth <= 768) {
+                            // On mobile, the sidebar is hidden anyway
+                        }
+                    });
+                });
+
+            });
+
+        })();
+    </script>
+</body>
+</html>

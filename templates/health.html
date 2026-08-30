@@ -1,0 +1,350 @@
+{% extends base_template %}
+{% block content %}
+<h2>🧪 Health & Configuration</h2>
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px;">
+    <!-- Server Control -->
+    <div class="card">
+        <h3 style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+            <span style="width: 32px; height: 32px; background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1rem;">🔄</span>
+            Server Control
+        </h3>
+        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+            <button id="stopServerBtn" style="background: linear-gradient(135deg, rgba(244, 63, 94, 0.15), rgba(244, 63, 94, 0.05)); border: 1px solid rgba(244, 63, 94, 0.3); color: var(--accent-red); flex: 1; min-width: 120px;">
+                <span style="font-size: 1.1rem;">⏹</span> Stop Server
+            </button>
+            <button id="restartServerBtn" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(16, 185, 129, 0.05)); border: 1px solid rgba(16, 185, 129, 0.3); color: var(--accent-green); flex: 1; min-width: 120px;">
+                <span style="font-size: 1.1rem;">🔄</span> Restart Server
+            </button>
+        </div>
+        <div id="serverControlStatus" style="margin-top: 12px; font-size: 0.85rem; color: var(--text-muted);"></div>
+    </div>
+
+    <!-- ngrok -->
+    <div class="card">
+        <h3 style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+            <span style="width: 32px; height: 32px; background: linear-gradient(135deg, var(--accent-purple), var(--accent-cyan)); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1rem;">🔗</span>
+            ngrok Tunnel
+        </h3>
+        <div id="ngrokStatus" style="padding: 12px 16px; background: rgba(0,0,0,0.2); border-radius: 10px; margin-bottom: 16px; font-family: var(--font-mono); font-size: 0.9rem;">Loading...</div>
+        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+            <button id="ngrokStartBtn" style="flex: 1; background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(16, 185, 129, 0.05)); border-color: rgba(16, 185, 129, 0.3); color: var(--accent-green);">▶ Start Tunnel</button>
+            <button id="ngrokStopBtn" style="flex: 1; background: linear-gradient(135deg, rgba(244, 63, 94, 0.15), rgba(244, 63, 94, 0.05)); border-color: rgba(244, 63, 94, 0.3); color: var(--accent-red);">⏹ Stop Tunnel</button>
+        </div>
+        <div id="ngrokUrl" style="margin-top: 12px; word-break: break-all; font-family: var(--font-mono); font-size: 0.85rem;"></div>
+    </div>
+
+    <!-- MCP Servers -->
+    <div class="card">
+        <h3 style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+            <span style="width: 32px; height: 32px; background: linear-gradient(135deg, var(--accent-amber), var(--accent-red)); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1rem;">🖥️</span>
+            MCP Servers
+        </h3>
+        <div id="mcpServersList"></div>
+        <details style="margin-top: 20px;">
+            <summary style="font-weight: 600; color: var(--accent-cyan); cursor: pointer; padding: 8px 0;">+ Add MCP Server</summary>
+            <div style="padding: 16px; background: rgba(0,0,0,0.2); border-radius: 12px; margin-top: 12px; display: flex; flex-direction: column; gap: 12px;">
+                <input type="text" id="mcpName" placeholder="Server Name" style="margin: 0;">
+                <textarea id="mcpConfig" rows="4" placeholder='{"type": "http", "url": "http://localhost:8080"}' style="margin: 0; font-family: var(--font-mono); font-size: 0.85rem;"></textarea>
+                <button id="addMcpBtn" style="margin: 0; background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)); color: white; border: none;">Add Server</button>
+            </div>
+        </details>
+    </div>
+
+    <!-- LLM Council -->
+    <div class="card">
+        <h3 style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+            <span style="width: 32px; height: 32px; background: linear-gradient(135deg, var(--accent-purple), var(--accent-cyan)); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1rem;">💬</span>
+            LLM Council
+        </h3>
+        <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.9rem;">Ask the council to discuss a topic. Uses the MCP server on port 8080.</p>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <input type="text" id="councilPrompt" placeholder="Enter your discussion prompt" style="flex: 3; min-width: 200px; margin: 0;">
+            <button id="councilAskBtn" style="flex: 1; min-width: 100px; margin: 0; background: linear-gradient(135deg, var(--accent-purple), var(--accent-cyan)); color: white; border: none;">Ask Council</button>
+        </div>
+        <div id="councilResponse" style="margin-top: 16px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-subtle); padding: 16px; border-radius: 12px; white-space: pre-wrap; max-height: 200px; overflow-y: auto; font-family: var(--font-mono); font-size: 0.85rem; color: var(--text-secondary); display: none;"></div>
+    </div>
+
+    <!-- LLM Providers -->
+    <div class="card">
+        <h3 style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+            <span style="width: 32px; height: 32px; background: linear-gradient(135deg, var(--accent-green), var(--accent-cyan)); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1rem;">🤖</span>
+            LLM Providers
+        </h3>
+        <div id="llmProvidersList"></div>
+        <details style="margin-top: 20px;">
+            <summary style="font-weight: 600; color: var(--accent-cyan); cursor: pointer; padding: 8px 0;">+ Add LLM Provider</summary>
+            <div style="padding: 16px; background: rgba(0,0,0,0.2); border-radius: 12px; margin-top: 12px; display: flex; flex-direction: column; gap: 12px;">
+                <input type="text" id="llmName" placeholder="Name" style="margin: 0;">
+                <select id="llmType" style="margin: 0;">
+                    <option value="openai">OpenAI-compatible</option>
+                    <option value="ollama">Ollama</option>
+                </select>
+                <input type="text" id="llmUrl" placeholder="Base URL" style="margin: 0;">
+                <input type="text" id="llmApiKey" placeholder="API Key (optional)" style="margin: 0;">
+                <button id="addLlmBtn" style="margin: 0; background: linear-gradient(135deg, var(--accent-green), var(--accent-cyan)); color: white; border: none;">Add Provider</button>
+            </div>
+        </details>
+    </div>
+
+    <!-- Legacy Council -->
+    <div class="card" style="opacity: 0.7;">
+        <h3 style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+            <span style="width: 32px; height: 32px; background: linear-gradient(135deg, var(--text-muted), var(--text-secondary)); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1rem;">🏛️</span>
+            LLM Council Status (legacy)
+        </h3>
+        <div id="councilStatus" style="color: var(--text-muted); font-size: 0.9rem;">Use the new "LLM Council" card above.</div>
+        <div id="councilMembersList"></div>
+        <button id="refreshCouncilBtn" style="margin-top: 16px; background: rgba(100, 116, 139, 0.1); border-color: rgba(100, 116, 139, 0.2); color: var(--text-muted);">🔄 Refresh</button>
+    </div>
+</div>
+
+<script>
+    async function updateNgrokStatus() {
+        const res = await fetch('/api/ngrok/status');
+        const data = await res.json();
+        const statusDiv = document.getElementById('ngrokStatus');
+        const urlDiv = document.getElementById('ngrokUrl');
+        if (data.status === 'running') {
+            statusDiv.innerHTML = '<span style="color: var(--accent-green); display: flex; align-items: center; gap: 8px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--accent-green); box-shadow: 0 0 10px var(--accent-green);"></span>🟢 Running</span>';
+            urlDiv.innerHTML = `<a href="${data.url}" target="_blank" style="color: var(--accent-cyan); text-decoration: none; font-weight: 600;">${data.url}</a>`;
+        } else {
+            statusDiv.innerHTML = '<span style="color: var(--accent-red); display: flex; align-items: center; gap: 8px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--accent-red); box-shadow: 0 0 10px var(--accent-red);"></span>🔴 Stopped</span>';
+            urlDiv.innerHTML = '';
+        }
+    }
+
+    document.getElementById('ngrokStartBtn').onclick = async () => {
+        const res = await fetch('/api/ngrok/start', { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'started' || data.status === 'already_running') {
+            updateNgrokStatus();
+            alert('Tunnel started: ' + data.url);
+        } else {
+            alert('Failed to start tunnel: ' + (data.message || ''));
+        }
+    };
+
+    document.getElementById('ngrokStopBtn').onclick = async () => {
+        const res = await fetch('/api/ngrok/stop', { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'stopped') {
+            updateNgrokStatus();
+            alert('Tunnel stopped');
+        } else {
+            alert('Failed to stop tunnel');
+        }
+    };
+    
+    document.getElementById('stopServerBtn').onclick = async () => {
+        if (!confirm('Stop the server? This will terminate the app.')) return;
+        const res = await fetch('/api/stop', { method: 'POST' });
+        const data = await res.json();
+        alert(data.message);
+    };
+
+    document.getElementById('restartServerBtn').onclick = async () => {
+        if (!confirm('Restart the server?')) return;
+        const res = await fetch('/api/restart', { method: 'POST' });
+        const data = await res.json();
+        alert(data.message);
+    };
+
+    async function loadMcpServers() {
+        const configRes = await fetch('/api/mcp_servers');
+        const configs = await configRes.json();
+        const toolsRes = await fetch('/router/tools');
+        let tools = [];
+        try { if (toolsRes.ok) tools = await toolsRes.json(); } catch (e) {}
+
+        const container = document.getElementById('mcpServersList');
+        container.innerHTML = '';
+
+        for (const [name, config] of Object.entries(configs)) {
+            let status = { connected: false, tools: [] };
+            try {
+                const statusRes = await fetch(`/router/server/${name}/status`);
+                if (statusRes.ok) status = await statusRes.json();
+            } catch (e) {}
+
+            const serverTools = tools.filter(t => t.server === name).map(t => t.name);
+            const connected = status.connected || (serverTools.length > 0);
+
+            const div = document.createElement('div');
+            div.style.cssText = 'padding: 16px; background: rgba(0,0,0,0.2); border-radius: 12px; margin-bottom: 12px; border: 1px solid var(--border-subtle); transition: all 0.2s;';
+            div.onmouseover = function() { this.style.borderColor = 'var(--border-glow)'; };
+            div.onmouseout = function() { this.style.borderColor = 'var(--border-subtle)'; };
+            div.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <strong style="font-size: 1rem;">${name}</strong>
+                    <span style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 20px; background: ${connected ? 'rgba(16, 185, 129, 0.1)' : 'rgba(244, 63, 94, 0.1)'}; color: ${connected ? 'var(--accent-green)' : 'var(--accent-red)'}; font-size: 0.8rem; font-weight: 600; border: 1px solid ${connected ? 'rgba(16, 185, 129, 0.2)' : 'rgba(244, 63, 94, 0.2)'};">
+                        <span style="width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor;"></span>
+                        ${connected ? 'Connected' : 'Disconnected'}
+                    </span>
+                </div>
+                <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 10px;">
+                    🔧 ${serverTools.length > 0 ? 'Tools: ' + serverTools.join(', ') : 'No tools discovered'}
+                </div>
+                <pre style="margin: 0; font-size: 0.75rem; max-height: 80px; overflow: auto;">${JSON.stringify(config, null, 2)}</pre>
+                <div style="display: flex; gap: 8px; margin-top: 12px;">
+                    <button class="startMcpBtn" data-name="${name}" style="flex: 1; margin: 0; padding: 8px; font-size: 0.8rem; background: rgba(16, 185, 129, 0.1); border-color: rgba(16, 185, 129, 0.2); color: var(--accent-green);">▶ Start</button>
+                    <button class="stopMcpBtn" data-name="${name}" style="flex: 1; margin: 0; padding: 8px; font-size: 0.8rem; background: rgba(244, 63, 94, 0.1); border-color: rgba(244, 63, 94, 0.2); color: var(--accent-red);">⏹ Stop</button>
+                    <button class="removeMcpBtn" data-name="${name}" style="flex: 1; margin: 0; padding: 8px; font-size: 0.8rem; background: rgba(100, 116, 139, 0.1); border-color: rgba(100, 116, 139, 0.2); color: var(--text-muted);">🗑 Remove</button>
+                </div>
+            `;
+            container.appendChild(div);
+        }
+
+        document.querySelectorAll('.startMcpBtn').forEach(btn => {
+            btn.onclick = async () => {
+                const name = btn.dataset.name;
+                const res = await fetch(`/router/server/${name}/start`, { method: 'POST' });
+                const data = await res.json();
+                if (res.ok) { alert(`Server ${name} started.`); loadMcpServers(); }
+                else { alert(`Failed: ${data.error}`); }
+            };
+        });
+        document.querySelectorAll('.stopMcpBtn').forEach(btn => {
+            btn.onclick = async () => {
+                const name = btn.dataset.name;
+                const res = await fetch(`/router/server/${name}/stop`, { method: 'POST' });
+                const data = await res.json();
+                if (res.ok) { alert(`Server ${name} stopped.`); loadMcpServers(); }
+                else { alert(`Failed: ${data.error}`); }
+            };
+        });
+        document.querySelectorAll('.removeMcpBtn').forEach(btn => {
+            btn.onclick = async () => {
+                const name = btn.dataset.name;
+                if (!confirm(`Remove server ${name}?`)) return;
+                await fetch(`/api/mcp_servers/${name}`, { method: 'DELETE' });
+                await fetch('/router/reload', { method: 'POST' });
+                loadMcpServers();
+            };
+        });
+
+        document.getElementById('addMcpBtn').onclick = async () => {
+            const name = document.getElementById('mcpName').value;
+            const configText = document.getElementById('mcpConfig').value;
+            let config;
+            try { config = JSON.parse(configText); } catch (e) { alert('Invalid JSON in config.'); return; }
+            await fetch('/api/mcp_servers', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json','X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
+                body: JSON.stringify({ name, config })
+            });
+            await fetch('/router/reload', { method: 'POST' });
+            loadMcpServers();
+            document.getElementById('mcpName').value = '';
+            document.getElementById('mcpConfig').value = '';
+        };
+    }
+     
+    document.getElementById('councilAskBtn').onclick = async () => {
+        const prompt = document.getElementById('councilPrompt').value.trim();
+        if (!prompt) { alert('Please enter a prompt.'); return; }
+        const responseDiv = document.getElementById('councilResponse');
+        responseDiv.style.display = 'block';
+        responseDiv.textContent = '⏳ Asking council...';
+        try {
+            const res = await fetch('/api/council/discuss', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json','X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
+                body: JSON.stringify({ prompt })
+            });
+            const data = await res.json();
+            if (res.ok) responseDiv.textContent = JSON.stringify(data.response, null, 2);
+            else responseDiv.textContent = '❌ Error: ' + (data.error || 'Unknown error');
+        } catch (err) {
+            responseDiv.textContent = '❌ Network error: ' + err.message;
+        }
+    };
+
+    async function loadLlmProviders() {
+        const res = await fetch('/api/llm_providers');
+        const providers = await res.json();
+        const container = document.getElementById('llmProvidersList');
+        container.innerHTML = '';
+        for (const [key, provider] of Object.entries(providers)) {
+            const div = document.createElement('div');
+            div.style.cssText = 'padding: 16px; background: rgba(0,0,0,0.2); border-radius: 12px; margin-bottom: 12px; border: 1px solid var(--border-subtle);';
+            const status = provider.enabled ? '🟢 Enabled' : '🔴 Disabled';
+            div.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <strong>${provider.name}</strong>
+                    <span style="font-size: 0.8rem; color: ${provider.enabled ? 'var(--accent-green)' : 'var(--accent-red)'}; font-weight: 600;">${status}</span>
+                </div>
+                <div style="display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap;">
+                    <button class="toggleLlmBtn" data-key="${key}" style="margin: 0; padding: 6px 14px; font-size: 0.8rem;">Toggle</button>
+                    ${key !== 'kaggle' && key !== 'ollama' ? `<button class="removeLlmBtn" data-key="${key}" style="margin: 0; padding: 6px 14px; font-size: 0.8rem; background: rgba(244, 63, 94, 0.1); border-color: rgba(244, 63, 94, 0.2); color: var(--accent-red);">Remove</button>` : ''}
+                    <button class="checkLlmBtn" data-key="${key}" style="margin: 0; padding: 6px 14px; font-size: 0.8rem; background: rgba(6, 182, 212, 0.1); border-color: rgba(6, 182, 212, 0.2); color: var(--accent-cyan);">Check</button>
+                </div>
+                <pre style="margin: 0; font-size: 0.75rem; max-height: 100px; overflow: auto;">${JSON.stringify(provider, null, 2)}</pre>
+                <div id="llm-status-${key}" style="margin-top: 8px; font-size: 0.8rem;"></div>
+            `;
+            container.appendChild(div);
+        }
+        document.querySelectorAll('.toggleLlmBtn').forEach(btn => {
+            btn.onclick = async () => { await fetch(`/api/llm_providers/${btn.dataset.key}/toggle`, { method: 'POST' }); loadLlmProviders(); };
+        });
+        document.querySelectorAll('.removeLlmBtn').forEach(btn => {
+            btn.onclick = async () => { await fetch(`/api/llm_providers/${btn.dataset.key}`, { method: 'DELETE' }); loadLlmProviders(); };
+        });
+        document.querySelectorAll('.checkLlmBtn').forEach(btn => {
+            btn.onclick = () => checkLlmStatus(btn.dataset.key);
+        });
+        for (const key of Object.keys(providers)) checkLlmStatus(key);
+    }
+
+    async function checkLlmStatus(key) {
+        const statusDiv = document.getElementById(`llm-status-${key}`);
+        if (!statusDiv) return;
+        statusDiv.textContent = '⏳ checking...';
+        try {
+            const res = await fetch('/api/llm_providers/status', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
+                body: JSON.stringify({ key })
+            });
+            const data = await res.json();
+            if (data.status === 'online') {
+                statusDiv.innerHTML = '🟢 <span style="color: var(--accent-green); font-weight: 600;">Online</span>';
+            } else if (data.status === 'offline') {
+                statusDiv.innerHTML = `🔴 <span style="color: var(--accent-red); font-weight: 600;">Offline</span> <span style="color: var(--text-muted); font-size: 0.75rem;">(${data.message})</span>`;
+            } else {
+                statusDiv.innerHTML = `🟡 <span style="color: var(--accent-amber); font-weight: 600;">${data.status}</span> <span style="color: var(--text-muted); font-size: 0.75rem;">(${data.message})</span>`;
+            }
+        } catch (err) {
+            statusDiv.innerHTML = '❌ <span style="color: var(--accent-red);">Error</span>';
+        }
+    }
+
+    document.getElementById('addLlmBtn').onclick = async () => {
+        const name = document.getElementById('llmName').value;
+        const type = document.getElementById('llmType').value;
+        const url = document.getElementById('llmUrl').value;
+        const apiKey = document.getElementById('llmApiKey').value;
+        if (!name || !url) { alert('Name and URL are required'); return; }
+        await fetch('/api/llm_providers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json','X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
+            body: JSON.stringify({ name, type, url, api_key: apiKey })
+        });
+        loadLlmProviders();
+    };
+
+    async function loadCouncilStatus() {
+        document.getElementById('councilStatus').textContent = 'Use the new "LLM Council" card above.';
+        document.getElementById('councilMembersList').innerHTML = '';
+    }
+    document.getElementById('refreshCouncilBtn').onclick = loadCouncilStatus;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        updateNgrokStatus();
+        loadMcpServers();
+        loadLlmProviders();
+        loadCouncilStatus();
+        setInterval(loadMcpServers, 30000);
+    });
+</script>
+{% endblock %}

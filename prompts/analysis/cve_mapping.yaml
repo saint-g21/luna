@@ -1,0 +1,11 @@
+name: cve_mapping
+description: Map versions to CVEs
+content: |
+  Given the service and version, suggest relevant CVE search keywords.
+  Do not invent CVE IDs. Only suggest what to search for in the NVD database.
+variables:
+  - service
+  - version
+toolstouse:
+  - searchsploit
+  

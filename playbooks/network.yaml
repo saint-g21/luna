@@ -1,0 +1,19 @@
+steps:
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "-sV"
+      ports: ""
+      additional_args: "-T4"
+
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "-sC"
+      ports: ""
+      additional_args: "-T4"
+
+  - tool: enum4linux
+    arguments:
+      target: "{target}"
+      additional_args: "-a"

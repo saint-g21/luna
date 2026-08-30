@@ -1,0 +1,44 @@
+steps:
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "-sV"
+      ports: "80,443,8080,8443"
+      additional_args: "-T4"
+
+  - tool: gobuster
+    arguments:
+      url: "http://{target}"
+      mode: "dir"
+      wordlist: "/usr/share/seclists/Discovery/Web-Content/common.txt"
+      additional_args: "-t 50 -x php,asp,aspx,jsp,html,txt"
+
+  - tool: gobuster
+    arguments:
+      url: "https://{target}"
+      mode: "dir"
+      wordlist: "/usr/share/seclists/Discovery/Web-Content/common.txt"
+      additional_args: "-t 50 -x php,asp,aspx,jsp,html,txt -k"
+
+  - tool: nikto
+    arguments:
+      target: "{target}"
+      additional_args: "-ssl"
+
+  - tool: sqlmap
+    arguments:
+      target: "http://{target}"
+      additional_args: "--batch --crawl=2 --random-agent"
+
+  - tool: wpscan
+    arguments:
+      url: "http://{target}"
+      additional_args: "--enumerate vp,vt,tt,cb,dbe,u,m"
+
+  - tool: hydra
+    arguments:
+      target: "{target}"
+      service: "http-get-form"
+      userlist: "/usr/share/seclists/Usernames/top-usernames-shortlist.txt"
+      passlist: "/usr/share/seclists/Passwords/Common-Credentials/10k-most-common.txt"
+      additional_args: '"/login.php:user=^USER^&pass=^PASS^:Login failed" -t 4'

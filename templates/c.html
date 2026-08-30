@@ -1,0 +1,1364 @@
+{% extends base_template %}
+{% block head %}
+    {{ super() }}
+    <style>
+        /* ════════════════════════════════════════════════════════════
+           CHAT STYLES — scoped under #chat-app for max specificity
+           ════════════════════════════════════════════════════════════ */
+
+        #chat-app {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        #chat-app .chat-container {
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            gap: 16px !important;
+            max-width: 900px !important;
+            margin: 0 auto !important;
+            padding: 20px 16px 160px !important;
+            min-height: calc(100vh - 120px) !important;
+            justify-content: flex-start !important;
+            position: relative !important;
+        }
+
+        /* ── messages ── */
+        #chat-app .messages-card {
+            width: 100% !important;
+            flex: 1 !important;
+            min-height: 300px !important;
+            max-height: calc(100vh - 320px) !important;
+            overflow-y: auto !important;
+            padding: 16px 20px !important;
+            background: var(--bg-card) !important;
+            border: 1px solid var(--border-subtle) !important;
+            border-radius: var(--radius-lg) !important;
+            backdrop-filter: blur(8px) !important;
+            box-shadow: inset 0 2px 12px rgba(0,0,0,0.2) !important;
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 14px !important;
+        }
+        #chat-app .messages-card:empty::after {
+            content: 'No messages yet. Start a conversation!' !important;
+            color: var(--text-muted) !important;
+            text-align: center !important;
+            padding: 60px 20px !important;
+            font-style: italic !important;
+            display: block !important;
+        }
+
+        /* ── message wrappers ── */
+        #chat-app .message-wrapper {
+            display: flex !important;
+            width: 100% !important;
+            animation: chatFadeIn 0.3s ease-out !important;
+        }
+        #chat-app .message-wrapper.user {
+            justify-content: flex-end !important;
+        }
+        #chat-app .message-wrapper.assistant {
+            justify-content: flex-start !important;
+        }
+        #chat-app .message-wrapper.system {
+            justify-content: center !important;
+        }
+
+        /* ── message bubbles ── */
+        #chat-app .message-bubble {
+            max-width: 75% !important;
+            padding: 14px 18px !important;
+            border-radius: 18px !important;
+            font-size: 0.95rem !important;
+            line-height: 1.6 !important;
+            position: relative !important;
+            word-wrap: break-word !important;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.15) !important;
+        }
+        #chat-app .message-bubble.user {
+            background: linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(6, 182, 212, 0.05)) !important;
+            border: 1px solid rgba(6, 182, 212, 0.3) !important;
+            border-bottom-right-radius: 4px !important;
+            color: var(--text-primary) !important;
+        }
+        #chat-app .message-bubble.assistant {
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(139, 92, 246, 0.04)) !important;
+            border: 1px solid rgba(139, 92, 246, 0.25) !important;
+            border-bottom-left-radius: 4px !important;
+            color: var(--text-primary) !important;
+        }
+        #chat-app .message-bubble.system {
+            background: rgba(245, 158, 11, 0.08) !important;
+            border: 1px solid rgba(245, 158, 11, 0.2) !important;
+            border-radius: 12px !important;
+            color: var(--accent-amber) !important;
+            font-size: 0.85rem !important;
+            max-width: 90% !important;
+        }
+        #chat-app .message-bubble.thinking {
+            background: rgba(100, 116, 139, 0.1) !important;
+            border: 1px solid rgba(100, 116, 139, 0.2) !important;
+            color: var(--text-muted) !important;
+            font-style: italic !important;
+        }
+        #chat-app .message-bubble.error {
+            background: rgba(244, 63, 94, 0.08) !important;
+            border: 1px solid rgba(244, 63, 94, 0.25) !important;
+            color: var(--accent-red) !important;
+        }
+        #chat-app .message-bubble strong {
+            display: block !important;
+            margin-bottom: 6px !important;
+            font-size: 0.75rem !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.08em !important;
+            opacity: 0.7 !important;
+        }
+        #chat-app .message-bubble.user strong { color: var(--accent-cyan) !important; }
+        #chat-app .message-bubble.assistant strong { color: var(--accent-purple) !important; }
+
+        /* ── copy icon (hover-only, inside bubble) ── */
+        #chat-app .copy-icon {
+            position: absolute !important;
+            top: 6px !important;
+            right: 6px !important;
+            width: 26px !important;
+            height: 26px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            background: rgba(255,255,255,0.08) !important;
+            border: 1px solid rgba(255,255,255,0.1) !important;
+            border-radius: 6px !important;
+            color: var(--text-muted) !important;
+            font-size: 0.75rem !important;
+            cursor: pointer !important;
+            opacity: 0 !important;
+            transition: all 0.2s ease !important;
+            z-index: 2 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            line-height: 1 !important;
+        }
+        #chat-app .message-bubble:hover .copy-icon {
+            opacity: 1 !important;
+        }
+        #chat-app .copy-icon:hover {
+            background: rgba(6, 182, 212, 0.2) !important;
+            color: var(--accent-cyan) !important;
+            border-color: var(--accent-cyan) !important;
+        }
+
+        /* ── input area (fixed bottom center) ── */
+        #chat-app .input-area {
+            width: 100% !important;
+            max-width: 700px !important;
+            margin: 0 auto !important;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            gap: 10px !important;
+            position: fixed !important;
+            bottom: 20px !important;
+            left: 50% !important;
+            transform: translateX(-50%) !important;
+            z-index: 50 !important;
+            padding: 0 16px !important;
+        }
+
+        #chat-app .input-bar {
+            width: 100% !important;
+            display: flex !important;
+            align-items: center !important;
+            gap: 8px !important;
+            background: var(--bg-card) !important;
+            border: 1px solid var(--border-subtle) !important;
+            border-radius: 24px !important;
+            padding: 6px 6px 6px 16px !important;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.02) !important;
+            backdrop-filter: blur(20px) !important;
+            transition: all 0.2s !important;
+        }
+        #chat-app .input-bar:focus-within {
+            border-color: var(--accent-cyan) !important;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.3), 0 0 0 2px rgba(6, 182, 212, 0.1) !important;
+        }
+        #chat-app .input-bar #userInput {
+            flex: 1 !important;
+            background: transparent !important;
+            border: none !important;
+            border-radius: 0 !important;
+            padding: 10px 8px !important;
+            color: var(--text-primary) !important;
+            font-size: 0.95rem !important;
+            outline: none !important;
+            font-family: var(--font-ui) !important;
+            width: auto !important;
+            box-shadow: none !important;
+        }
+        #chat-app .input-bar #userInput::placeholder {
+            color: var(--text-muted) !important;
+        }
+        #chat-app .input-bar #sendBtn {
+            width: 38px !important;
+            height: 38px !important;
+            border-radius: 50% !important;
+            border: none !important;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)) !important;
+            color: white !important;
+            font-size: 1rem !important;
+            cursor: pointer !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            box-shadow: 0 2px 12px rgba(6, 182, 212, 0.3) !important;
+            transition: all 0.2s !important;
+            flex-shrink: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            line-height: 1 !important;
+        }
+        #chat-app .input-bar #sendBtn:hover {
+            transform: scale(1.08) !important;
+            box-shadow: 0 4px 20px rgba(6, 182, 212, 0.5) !important;
+        }
+        #chat-app .input-bar #sendBtn:active {
+            transform: scale(0.95) !important;
+        }
+
+        /* ── action row ── */
+        #chat-app .action-row {
+            display: flex !important;
+            gap: 8px !important;
+            flex-wrap: wrap !important;
+            justify-content: center !important;
+            align-items: center !important;
+        }
+        #chat-app .action-btn {
+            padding: 6px 14px !important;
+            border-radius: 20px !important;
+            font-weight: 500 !important;
+            font-size: 0.75rem !important;
+            cursor: pointer !important;
+            border: 1px solid var(--border-subtle) !important;
+            background: rgba(255,255,255,0.03) !important;
+            color: var(--text-secondary) !important;
+            transition: all 0.2s !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            gap: 5px !important;
+            backdrop-filter: blur(4px) !important;
+            line-height: 1 !important;
+        }
+        #chat-app .action-btn:hover {
+            border-color: var(--accent-cyan) !important;
+            color: var(--accent-cyan) !important;
+            background: rgba(6, 182, 212, 0.06) !important;
+            transform: translateY(-1px) !important;
+        }
+        #chat-app .action-btn.danger {
+            border-color: rgba(244, 63, 94, 0.25) !important;
+            color: var(--accent-red) !important;
+        }
+        #chat-app .action-btn.danger:hover {
+            border-color: var(--accent-red) !important;
+            background: rgba(244, 63, 94, 0.08) !important;
+        }
+        #chat-app .action-btn.purple {
+            border-color: rgba(139, 92, 246, 0.25) !important;
+            color: var(--accent-purple) !important;
+        }
+        #chat-app .action-btn.purple:hover {
+            border-color: var(--accent-purple) !important;
+            background: rgba(139, 92, 246, 0.08) !important;
+        }
+
+        /* ── settings bar ── */
+        #chat-app .settings-bar {
+            display: flex !important;
+            flex-wrap: wrap !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 10px !important;
+        }
+
+        /* Autonomous toggle */
+        #chat-app .autonomous-btn {
+            padding: 6px 14px !important;
+            border-radius: 20px !important;
+            font-weight: 600 !important;
+            font-size: 0.78rem !important;
+            cursor: pointer !important;
+            border: 1px solid transparent !important;
+            transition: all 0.25s ease !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            gap: 6px !important;
+            user-select: none !important;
+            line-height: 1 !important;
+        }
+        #chat-app .autonomous-btn.inactive {
+            background: linear-gradient(135deg, rgba(6, 182, 212, 0.15), rgba(59, 130, 246, 0.1)) !important;
+            border-color: rgba(6, 182, 212, 0.3) !important;
+            color: var(--accent-cyan) !important;
+        }
+        #chat-app .autonomous-btn.inactive:hover {
+            background: linear-gradient(135deg, rgba(6, 182, 212, 0.25), rgba(59, 130, 246, 0.15)) !important;
+            box-shadow: 0 0 16px rgba(6, 182, 212, 0.2) !important;
+        }
+        #chat-app .autonomous-btn.active {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(16, 185, 129, 0.1)) !important;
+            border-color: rgba(16, 185, 129, 0.4) !important;
+            color: var(--accent-green) !important;
+            box-shadow: 0 0 16px rgba(16, 185, 129, 0.15) !important;
+        }
+        #chat-app .autonomous-btn.active:hover {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.3), rgba(16, 185, 129, 0.15)) !important;
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.25) !important;
+        }
+
+        /* Advanced button */
+        #chat-app .advanced-btn {
+            padding: 6px 14px !important;
+            border-radius: 20px !important;
+            font-weight: 500 !important;
+            font-size: 0.78rem !important;
+            cursor: pointer !important;
+            border: 1px solid var(--border-subtle) !important;
+            background: rgba(255,255,255,0.03) !important;
+            color: var(--text-muted) !important;
+            transition: all 0.2s !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            gap: 5px !important;
+            line-height: 1 !important;
+        }
+        #chat-app .advanced-btn:hover {
+            border-color: var(--accent-cyan) !important;
+            color: var(--accent-cyan) !important;
+            background: rgba(6, 182, 212, 0.06) !important;
+        }
+        #chat-app .advanced-btn.open {
+            border-color: var(--accent-cyan) !important;
+            color: var(--accent-cyan) !important;
+            background: rgba(6, 182, 212, 0.1) !important;
+        }
+
+        /* ── advanced panel (bottom sheet) ── */
+        #chat-app .advanced-panel-overlay {
+            position: fixed !important;
+            inset: 0 !important;
+            background: rgba(0,0,0,0.6) !important;
+            backdrop-filter: blur(6px) !important;
+            z-index: 300 !important;
+            opacity: 0 !important;
+            visibility: hidden !important;
+            transition: opacity 0.3s ease, visibility 0.3s !important;
+        }
+        #chat-app .advanced-panel-overlay.open {
+            opacity: 1 !important;
+            visibility: visible !important;
+        }
+        #chat-app .advanced-panel {
+            position: fixed !important;
+            bottom: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            max-height: 70vh !important;
+            overflow-y: auto !important;
+            background: linear-gradient(180deg, rgba(10, 15, 28, 0.98), rgba(8, 12, 22, 0.99)) !important;
+            backdrop-filter: blur(30px) !important;
+            border-top: 1px solid var(--border-subtle) !important;
+            border-radius: 24px 24px 0 0 !important;
+            padding: 24px 28px 40px !important;
+            z-index: 301 !important;
+            transform: translateY(110%) !important;
+            visibility: hidden !important;
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.4s !important;
+            box-shadow: 0 -8px 40px rgba(0,0,0,0.5) !important;
+        }
+        #chat-app .advanced-panel.open {
+            transform: translateY(0) !important;
+            visibility: visible !important;
+        }
+        #chat-app .advanced-panel-header {
+            display: flex !important;
+            justify-content: space-between !important;
+            align-items: center !important;
+            margin-bottom: 20px !important;
+            padding-bottom: 12px !important;
+            border-bottom: 1px solid var(--border-subtle) !important;
+        }
+        #chat-app .advanced-panel-header h3 {
+            font-size: 1rem !important;
+            font-weight: 700 !important;
+            color: var(--text-primary) !important;
+            margin: 0 !important;
+        }
+        #chat-app .advanced-panel-close {
+            width: 32px !important;
+            height: 32px !important;
+            border-radius: 8px !important;
+            border: 1px solid var(--border-subtle) !important;
+            background: rgba(255,255,255,0.03) !important;
+            color: var(--text-secondary) !important;
+            cursor: pointer !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            font-size: 1rem !important;
+            transition: all 0.2s !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            line-height: 1 !important;
+        }
+        #chat-app .advanced-panel-close:hover {
+            border-color: var(--accent-red) !important;
+            color: var(--accent-red) !important;
+            background: rgba(244, 63, 94, 0.08) !important;
+        }
+        #chat-app .settings-panel-grid {
+            display: grid !important;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)) !important;
+            gap: 20px 28px !important;
+            align-items: end !important;
+        }
+        #chat-app .settings-panel-grid .field {
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 4px !important;
+        }
+        #chat-app .settings-panel-grid .field label {
+            font-size: 0.7rem !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.08em !important;
+            color: var(--text-muted) !important;
+            font-weight: 600 !important;
+        }
+        #chat-app .settings-panel-grid .field select,
+        #chat-app .settings-panel-grid .field input[type="text"] {
+            padding: 10px 14px !important;
+            background: rgba(0,0,0,0.25) !important;
+            border: 1px solid var(--border-subtle) !important;
+            border-radius: 10px !important;
+            color: var(--text-primary) !important;
+            font-size: 0.9rem !important;
+            width: 100% !important;
+            transition: all 0.2s !important;
+            outline: none !important;
+            box-shadow: none !important;
+        }
+        #chat-app .settings-panel-grid .field select:focus,
+        #chat-app .settings-panel-grid .field input:focus {
+            border-color: var(--accent-cyan) !important;
+            box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.1) !important;
+        }
+        #chat-app .settings-panel-grid .field .inline-btn {
+            margin-top: 4px !important;
+            padding: 6px 14px !important;
+            background: rgba(139, 92, 246, 0.1) !important;
+            border: 1px solid rgba(139, 92, 246, 0.2) !important;
+            color: var(--accent-purple) !important;
+            border-radius: 8px !important;
+            font-size: 0.75rem !important;
+            cursor: pointer !important;
+            transition: all 0.2s !important;
+            width: fit-content !important;
+            line-height: 1 !important;
+        }
+        #chat-app .settings-panel-grid .field .inline-btn:hover {
+            background: rgba(139, 92, 246, 0.2) !important;
+        }
+        #chat-app .settings-panel-grid .checkbox-field {
+            display: flex !important;
+            align-items: center !important;
+            gap: 10px !important;
+            padding-top: 8px !important;
+        }
+        #chat-app .settings-panel-grid .checkbox-field input {
+            width: auto !important;
+            margin: 0 !important;
+            accent-color: var(--accent-cyan) !important;
+        }
+        #chat-app .settings-panel-grid .checkbox-field label {
+            margin: 0 !important;
+            text-transform: none !important;
+            font-weight: 500 !important;
+            color: var(--text-secondary) !important;
+            font-size: 0.85rem !important;
+        }
+        #chat-app #promptEditor {
+            margin-top: 16px !important;
+            padding: 16px !important;
+            background: rgba(0,0,0,0.2) !important;
+            border: 1px solid var(--border-subtle) !important;
+            border-radius: 12px !important;
+            grid-column: 1 / -1 !important;
+        }
+        #chat-app #promptContent {
+            width: 100% !important;
+            min-height: 80px !important;
+            background: rgba(0,0,0,0.3) !important;
+            border: 1px solid var(--border-subtle) !important;
+            border-radius: 10px !important;
+            padding: 12px !important;
+            color: var(--text-primary) !important;
+            font-family: var(--font-mono) !important;
+            font-size: 0.85rem !important;
+            resize: vertical !important;
+            outline: none !important;
+            box-shadow: none !important;
+        }
+        #chat-app #promptContent:focus {
+            border-color: var(--accent-cyan) !important;
+        }
+        #chat-app #savePromptBtn {
+            margin-top: 10px !important;
+            padding: 10px 20px !important;
+            background: linear-gradient(135deg, var(--accent-green), rgba(16, 185, 129, 0.8)) !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 10px !important;
+            font-weight: 600 !important;
+            cursor: pointer !important;
+            transition: all 0.2s !important;
+            line-height: 1 !important;
+        }
+        #chat-app #savePromptBtn:hover {
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3) !important;
+        }
+
+        /* ── tool details ── */
+        #chat-app .tool-details {
+            max-width: 90% !important;
+            width: 100% !important;
+        }
+        #chat-app .tool-details details {
+            background: rgba(0,0,0,0.2) !important;
+            border: 1px solid var(--border-subtle) !important;
+            border-radius: 12px !important;
+            padding: 12px 16px !important;
+            margin: 4px 0 !important;
+        }
+        #chat-app .tool-details summary {
+            font-weight: 600 !important;
+            color: var(--accent-cyan) !important;
+            cursor: pointer !important;
+            font-size: 0.9rem !important;
+        }
+        #chat-app .tool-details.result summary {
+            color: var(--accent-green) !important;
+        }
+        #chat-app .tool-proposal {
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.03)) !important;
+            border: 1px solid rgba(245, 158, 11, 0.3) !important;
+        }
+        #chat-app .plan,
+        #chat-app .plan-proposal {
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(139, 92, 246, 0.03)) !important;
+            border: 1px solid rgba(139, 92, 246, 0.25) !important;
+        }
+        #chat-app .plan ul,
+        #chat-app .plan-proposal ul {
+            margin: 8px 0 !important;
+            padding-left: 20px !important;
+            color: var(--text-secondary) !important;
+        }
+        #chat-app .plan li,
+        #chat-app .plan-proposal li {
+            margin: 4px 0 !important;
+            font-size: 0.9rem !important;
+        }
+        #chat-app .confirm-btn,
+        #chat-app .cancel-btn,
+        #chat-app .confirm-plan-btn,
+        #chat-app .cancel-plan-btn {
+            padding: 8px 20px !important;
+            margin: 10px 8px 0 0 !important;
+            border-radius: 8px !important;
+            font-weight: 600 !important;
+            font-size: 0.85rem !important;
+            cursor: pointer !important;
+            border: none !important;
+            transition: all 0.2s !important;
+            line-height: 1 !important;
+        }
+        #chat-app .confirm-btn,
+        #chat-app .confirm-plan-btn {
+            background: linear-gradient(135deg, var(--accent-green), rgba(16, 185, 129, 0.8)) !important;
+            color: white !important;
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3) !important;
+        }
+        #chat-app .cancel-btn,
+        #chat-app .cancel-plan-btn {
+            background: rgba(244, 63, 94, 0.15) !important;
+            color: var(--accent-red) !important;
+            border: 1px solid rgba(244, 63, 94, 0.3) !important;
+        }
+
+        @keyframes chatFadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes thinkingPulse {
+            0%, 100% { opacity: 0.4; }
+            50% { opacity: 1; }
+        }
+        #chat-app .thinking-indicator {
+            animation: thinkingPulse 1.5s ease-in-out infinite !important;
+        }
+
+        @media (max-width: 768px) {
+            #chat-app .chat-container {
+                padding: 12px 10px 160px !important;
+            }
+            #chat-app .message-bubble {
+                max-width: 90% !important;
+            }
+            #chat-app .input-area {
+                bottom: 10px !important;
+                padding: 0 10px !important;
+            }
+            #chat-app .settings-panel-grid {
+                grid-template-columns: 1fr !important;
+            }
+            #chat-app .advanced-panel {
+                padding: 20px 16px 32px !important;
+                max-height: 80vh !important;
+            }
+        }
+    </style>
+{% endblock %}
+{% block content %}
+<div id="chat-app">
+<h2 style="text-align:center; margin-bottom: 16px;">💬 Chat</h2>
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<div class="chat-container">
+    <div class="messages-card" id="chatMessages"></div>
+</div>
+
+<div class="input-area">
+    <div class="input-bar">
+        <input type="text" id="userInput" placeholder="Type your message..." autocomplete="off">
+        <button id="sendBtn" title="Send">➤</button>
+    </div>
+    <div class="action-row">
+        <button id="clearHistoryBtn" class="action-btn danger">✕ Clear</button>
+        <button id="compressChatBtn" class="action-btn purple">⟳ Compress</button>
+        <button id="generateReportBtn" class="action-btn">📄 Report</button>
+    </div>
+    <div class="settings-bar">
+        <button id="syncBtn" class="action-btn purple">☁️ Sync</button>
+        <button id="autonomousBtn" class="autonomous-btn inactive"><span>🤖</span> Autonomous</button>
+        <button id="advancedBtn" class="advanced-btn">⚙️ Advanced</button>
+    </div>
+</div>
+
+<div class="advanced-panel-overlay" id="advancedPanelOverlay"></div>
+<div class="advanced-panel" id="advancedPanel">
+    <div class="advanced-panel-header">
+        <h3>⚙️ Advanced Settings</h3>
+        <button class="advanced-panel-close" id="advancedPanelClose">✕</button>
+    </div>
+    <div class="settings-panel-grid">
+        <div class="field">
+            <label>Provider</label>
+            <select id="llmProvider"><option value="kaggle">Kaggle</option><option value="ollama">Ollama</option></select>
+        </div>
+        <div class="field">
+            <label>Model</label>
+            <select id="ollamaModel"></select>
+        </div>
+        <div class="field">
+            <label>System Prompt</label>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <select id="systemPromptSelect" style="flex:1;"></select>
+                <button id="editPromptBtn" class="inline-btn">Edit</button>
+            </div>
+        </div>
+        <div class="field checkbox-field">
+            <input type="checkbox" id="useRagCheckbox">
+            <label for="useRagCheckbox">📚 Use RAG</label>
+        </div>
+        <div class="field">
+            <label>Workspace</label>
+            <select id="workspaceSelect"></select>
+        </div>
+        <div id="promptEditor" style="display:none;">
+            <textarea id="promptContent" rows="4" placeholder="Edit system prompt..."></textarea>
+            <button id="savePromptBtn">Save Prompt</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let chatHistory = [];
+    let currentSystemPrompt = "default";
+    let chatCurrentWorkspace = localStorage.getItem('workspace') || 'default';
+    let autonomousActive = false;
+
+    async function authFetch(url, options) {
+        options = options || {};
+        options.credentials = 'include';
+        options.headers = Object.assign({
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+        }, options.headers || {});
+        const response = await fetch(url, options);
+        if (!response.ok && response.status === 302) {
+            throw new Error('Session expired. Please reload and log in again.');
+        }
+        return response;
+    }
+
+    function getGlobalTarget() {
+        return localStorage.getItem('globalTarget') || '';
+    }
+
+    window.addEventListener('storage', function(e) {
+        if (e.key === 'workspace_created') loadWorkspacesDrop();
+    });
+
+    async function loadWorkspaceChat() {
+        if (!chatCurrentWorkspace) return;
+        try {
+            const res = await authFetch('/api/workspaces/' + chatCurrentWorkspace + '/chat');
+            chatHistory = await res.json();
+            renderChat();
+        } catch (err) {
+            chatHistory = [];
+            renderChat();
+        }
+    }
+
+    async function saveChatMessage(role, content) {
+        const msg = { role: role, content: content, timestamp: new Date().toISOString() };
+        chatHistory.push(msg);
+        try {
+            await authFetch('/api/workspaces/' + chatCurrentWorkspace + '/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
+                body: JSON.stringify(msg)
+            });
+        } catch (err) {
+            console.warn('Could not save chat:', err);
+        }
+        renderChat();
+    }
+
+    function renderChat() {
+        const container = document.getElementById('chatMessages');
+        container.innerHTML = '';
+        for (let i = 0; i < chatHistory.length; i++) {
+            const msg = chatHistory[i];
+            const wrapper = document.createElement('div');
+            wrapper.className = 'message-wrapper ' + msg.role;
+            const bubble = document.createElement('div');
+            bubble.className = 'message-bubble ' + msg.role;
+            const label = msg.role === 'user' ? '\uD83E\uDDD1 S21' : msg.role === 'assistant' ? '\uD83E\uDD16 luna' : '\u2699\uFE0F moonshot';
+            bubble.innerHTML = '<strong>' + label + '</strong>' + escapeHtml(msg.content);
+            wrapper.appendChild(bubble);
+            if (msg.role !== 'system') addCopyIcon(bubble, msg.content);
+            container.appendChild(wrapper);
+        }
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function escapeHtml(text) {
+        const d = document.createElement('div');
+        d.textContent = text;
+        return d.innerHTML;
+    }
+
+    async function clearChatHistory() {
+        const container = document.getElementById('chatMessages');
+        if (container) container.innerHTML = '';
+        localStorage.removeItem('chat_history');
+        localStorage.removeItem('active_task_id');
+        chatHistory = [];
+        try {
+            await authFetch('/api/workspaces/' + chatCurrentWorkspace + '/chat', { method: 'DELETE' });
+        } catch (err) {
+            console.warn('Could not clear server chat:', err);
+        }
+    }
+
+    async function sendMessageToLLM(userMessage) {
+        const provider = document.getElementById('llmProvider').value;
+        const model = document.getElementById('ollamaModel').value || 'llama3.1:8b';
+        const useRag = document.getElementById('useRagCheckbox').checked;
+        const mode = autonomousActive ? 'autonomous' : 'assistant';
+        const target = getGlobalTarget();
+        const messages = chatHistory.slice(-10).map(function(m) { return { role: m.role, content: m.content }; });
+        messages.push({ role: "user", content: userMessage });
+
+        const payload = {
+            messages: messages,
+            provider: provider,
+            model: model,
+            use_rag: useRag,
+            mode: mode,
+            context: { workspace: chatCurrentWorkspace, target: target }
+        };
+
+        let taskId = null;
+        try {
+            const response = await authFetch('/api/chat/stream', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) {
+                const errText = await response.text();
+                showError('Failed to start task ' + errText, true);
+                return;
+            }
+            let data;
+            try {
+                data = await response.json();
+            } catch (e) {
+                showError('Server returned invalid response. Please reload.', true);
+                return;
+            }
+            taskId = data.task_id;
+            if (!taskId) {
+                showError('No task ID returned', true);
+                return;
+            }
+        } catch (err) {
+            showError('Network error: ' + err.message, true);
+            return;
+        }
+        localStorage.setItem('active_task_id', taskId);
+        startPolling(taskId);
+    }
+
+    function handleStreamEvent(event, data, taskId) {
+        const container = document.getElementById('chatMessages');
+        if (event === 'thinking') {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'message-wrapper system';
+            wrapper.id = 'thinking-msg';
+            const bubble = document.createElement('div');
+            bubble.className = 'message-bubble thinking';
+            bubble.innerHTML = '<span class="thinking-indicator">\uD83E\uDDE0 ' + data.message + '</span>';
+            wrapper.appendChild(bubble);
+            container.appendChild(wrapper);
+            container.scrollTop = container.scrollHeight;
+        } else if (event === 'tool_call') {
+            const thinking = document.getElementById('thinking-msg');
+            if (thinking) thinking.remove();
+            const wrapper = document.createElement('div');
+            wrapper.className = 'message-wrapper system tool-details';
+            const argsStr = JSON.stringify(data.args, null, 2);
+            wrapper.innerHTML = '<div style="width:100%;"><details><summary>\uD83D\uDD27 ' + data.tool + '</summary><pre style="margin-top:8px;">' + escapeHtml(argsStr) + '</pre></details></div>';
+            addCopyIcon(wrapper.querySelector('details'), argsStr);
+            container.appendChild(wrapper);
+            container.scrollTop = container.scrollHeight;
+        } else if (event === 'tool_result') {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'message-wrapper system tool-details result';
+            const output = data.output || '';
+            wrapper.innerHTML = '<div style="width:100%;"><details><summary>\uD83D\uDCCA Output</summary><pre style="margin-top:8px;">' + escapeHtml(output) + '</pre></details></div>';
+            addCopyIcon(wrapper.querySelector('details'), output);
+            container.appendChild(wrapper);
+            container.scrollTop = container.scrollHeight;
+        } else if (event === 'final') {
+            const thinking = document.getElementById('thinking-msg');
+            if (thinking) thinking.remove();
+            const msg = {role: 'assistant', content: data.content, timestamp: new Date().toISOString()};
+            chatHistory.push(msg);
+            renderChat();
+        } else if (event === 'error') {
+            showError(data.message || 'Unknown error', false);
+        } else if (event === 'done') {
+            console.log('Stream done');
+        } else if (event === 'tool_proposal') {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'message-wrapper system';
+            const argsStr = JSON.stringify(data.args, null, 2);
+            wrapper.innerHTML = '<div class="message-bubble tool-proposal" style="width:100%;"><strong>\u2699\uFE0F Tool Proposal</strong><div style="margin:8px 0; color:var(--text-secondary);">' + data.tool + '</div><pre style="background:rgba(0,0,0,0.2); margin:8px 0;">' + escapeHtml(argsStr) + '</pre><button class="confirm-btn">Confirm</button><button class="cancel-btn">Cancel</button></div>';
+            addCopyIcon(wrapper.querySelector('.message-bubble'), argsStr);
+            container.appendChild(wrapper);
+            container.scrollTop = container.scrollHeight;
+            window._pendingTaskId = taskId;
+            wrapper.querySelector('.confirm-btn').onclick = function() {
+                confirmTool(data.tool, data.args);
+                wrapper.remove();
+            };
+            wrapper.querySelector('.cancel-btn').onclick = function() {
+                wrapper.remove();
+            };
+        } else if (event === 'plan') {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'message-wrapper system';
+            let html = '<div class="message-bubble plan" style="width:100%;"><strong>\uD83D\uDCCB Plan</strong><ul>';
+            data.plan.forEach(function(step, i) {
+                html += '<li><strong>Step ' + (i+1) + ':</strong> ' + step.tool + ' <code>' + JSON.stringify(step.args) + '</code></li>';
+            });
+            html += '</ul></div>';
+            wrapper.innerHTML = html;
+            container.appendChild(wrapper);
+            container.scrollTop = container.scrollHeight;
+        } else if (event === 'plan_proposal') {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'message-wrapper system';
+            let html = '<div class="message-bubble plan-proposal" style="width:100%;"><strong>\u2699\uFE0F Plan Proposal</strong><ul>';
+            data.plan.forEach(function(step, i) {
+                html += '<li><strong>Step ' + (i+1) + ':</strong> ' + step.tool + ' <code>' + JSON.stringify(step.args) + '</code></li>';
+            });
+            html += '</ul><button class="confirm-plan-btn">Confirm Plan</button><button class="cancel-plan-btn">Cancel</button></div>';
+            wrapper.innerHTML = html;
+            container.appendChild(wrapper);
+            container.scrollTop = container.scrollHeight;
+            wrapper.querySelector('.confirm-plan-btn').onclick = function() {
+                confirmPlan(taskId);
+                wrapper.remove();
+            };
+            wrapper.querySelector('.cancel-plan-btn').onclick = function() {
+                wrapper.remove();
+                cancelPlan(taskId);
+            };
+        }
+    }
+
+    async function loadLLMProviders() {
+        try {
+            const res = await authFetch('/api/llm_providers');
+            const providers = await res.json();
+            document.getElementById('llmProvider').addEventListener('change', function() {
+                if (this.value === 'kaggle') {
+                    loadKaggleModels();
+                } else if (this.value === 'ollama') {
+                    loadOllamaModels();
+                }
+            });
+            select.innerHTML = '';
+            for (const key in providers) {
+                if (providers[key].enabled) {
+                    const opt = document.createElement('option');
+                    opt.value = key;
+                    opt.textContent = providers[key].name || key;
+                    select.appendChild(opt);
+                }
+            }
+        } catch (e) {
+            console.warn('Could not load providers', e);
+        }
+    }
+
+    async function resumeTaskIfNeeded() {
+        const taskId = localStorage.getItem('active_task_id');
+        if (!taskId) return;
+        try {
+            const resp = await authFetch('/api/task/' + taskId);
+            if (!resp.ok) {
+                localStorage.removeItem('active_task_id');
+                return;
+            }
+            const task = await resp.json();
+            if (task.status === 'pending' || task.status === 'running' || task.status === 'pending_confirmation') {
+                console.log('Resuming polling for task ' + taskId);
+                window._lastEventIndex = 0;
+                const events = task.events || [];
+                for (let i = 0; i < events.length; i++) {
+                    handleStreamEvent(events[i].event, events[i].data, taskId);
+                }
+                window._lastEventIndex = events.length;
+                startPolling(taskId);
+            } else {
+                localStorage.removeItem('active_task_id');
+                if (task.status === 'completed' && task.result) {
+                    const msg = { role: 'assistant', content: task.result, timestamp: new Date().toISOString() };
+                    let exists = false;
+                    for (let i = 0; i < chatHistory.length; i++) {
+                        if (chatHistory[i].role === 'assistant' && chatHistory[i].content === task.result) {
+                            exists = true; break;
+                        }
+                    }
+                    if (!exists) {
+                        chatHistory.push(msg);
+                        renderChat();
+                    }
+                } else if (task.status === 'failed' && task.error) {
+                    showError(task.error, false);
+                }
+            }
+        } catch (err) {
+            console.warn('Could not resume task:', err);
+            localStorage.removeItem('active_task_id');
+        }
+    }
+
+    function startPolling(taskId) {
+        if (window._pollInterval) {
+            clearInterval(window._pollInterval);
+            window._pollInterval = null;
+        }
+        window._pollInterval = setInterval(async function() {
+            try {
+                const resp = await authFetch('/api/task/' + taskId);
+                if (!resp.ok) {
+                    clearInterval(window._pollInterval);
+                    showError('Task status error: ' + resp.status, true);
+                    localStorage.removeItem('active_task_id');
+                    return;
+                }
+                const task = await resp.json();
+                if (!window._lastEventIndex) window._lastEventIndex = 0;
+                const events = task.events || [];
+                for (let i = window._lastEventIndex; i < events.length; i++) {
+                    handleStreamEvent(events[i].event, events[i].data, taskId);
+                }
+                window._lastEventIndex = events.length;
+                if (task.status === 'completed') {
+                    clearInterval(window._pollInterval);
+                    window._pollInterval = null;
+                    localStorage.removeItem('active_task_id');
+                    if (task.result) await loadWorkspaceChat();
+                    const thinking = document.getElementById('thinking-msg');
+                    if (thinking) thinking.remove();
+                } else if (task.status === 'failed') {
+                    clearInterval(window._pollInterval);
+                    window._pollInterval = null;
+                    localStorage.removeItem('active_task_id');
+                    showError(task.error || 'Task failed', false);
+                } else if (task.status === 'pending_confirmation') {
+                    window._pendingTaskId = taskId;
+                }
+            } catch (err) {
+                clearInterval(window._pollInterval);
+                window._pollInterval = null;
+                showError('Polling error: ' + err.message, true);
+                localStorage.removeItem('active_task_id');
+            }
+        }, 3000);
+    }
+
+    function showError(message, isFatal) {
+        const container = document.getElementById('chatMessages');
+        const wrapper = document.createElement('div');
+        wrapper.className = 'message-wrapper system';
+        const bubble = document.createElement('div');
+        bubble.className = 'message-bubble error';
+        bubble.innerHTML = '\u274C ' + escapeHtml(message);
+        if (isFatal) {
+            const retryBtn = document.createElement('button');
+            retryBtn.textContent = '\uD83D\uDD04 Retry';
+            retryBtn.style.cssText = 'margin-top:10px; padding:8px 16px; background:rgba(6,182,212,0.15); border:1px solid rgba(6,182,212,0.3); color:var(--accent-cyan); border-radius:8px; cursor:pointer; font-weight:600;';
+            retryBtn.onclick = function() { wrapper.remove(); document.getElementById('sendBtn').click(); };
+            bubble.appendChild(retryBtn);
+        }
+        wrapper.appendChild(bubble);
+        container.appendChild(wrapper);
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function addCopyIcon(bubbleElement, contentToCopy) {
+        const icon = document.createElement('button');
+        icon.className = 'copy-icon';
+        icon.innerHTML = '\uD83D\uDCCB';
+        icon.title = 'Copy to clipboard';
+        icon.onclick = function(e) {
+            e.stopPropagation();
+            const text = contentToCopy || bubbleElement.textContent;
+            navigator.clipboard.writeText(text).then(function() {
+                icon.innerHTML = '\u2705';
+                setTimeout(function() { icon.innerHTML = '\uD83D\uDCCB'; }, 2000);
+            }).catch(console.warn);
+        };
+        bubbleElement.appendChild(icon);
+    }
+
+    async function confirmPlan(taskId) {
+        try {
+            const response = await authFetch('/api/task/' + taskId + '/confirm', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') }
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                await saveChatMessage('system', 'Confirmation failed: ' + data.error);
+                return;
+            }
+            await saveChatMessage('system', '\u2705 Plan confirmed, executing...');
+        } catch (err) {
+            await saveChatMessage('system', 'Error confirming plan: ' + err.message);
+        }
+    }
+
+    async function cancelPlan(taskId) {
+        try {
+            const response = await authFetch('/api/task/' + taskId + '/cancel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') }
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                await saveChatMessage('system', 'Cancel failed: ' + data.error);
+                return;
+            }
+            await saveChatMessage('system', '\u2705 Plan canceled.');
+        } catch (err) {
+            await saveChatMessage('system', 'Error canceling plan: ' + err.message);
+        }
+    }
+
+    async function confirmTool(tool, args) {
+        const taskId = window._pendingTaskId;
+        if (!taskId) { alert('No pending task to confirm.'); return; }
+        try {
+            const response = await authFetch('/api/task/' + taskId + '/confirm', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                await saveChatMessage('system', 'Confirmation failed: ' + data.error);
+                return;
+            }
+            await saveChatMessage('system', '\u2705 Tool confirmed, executing...');
+        } catch (err) {
+            await saveChatMessage('system', 'Error confirming: ' + err.message);
+        }
+    }
+
+    document.getElementById('sendBtn').onclick = async function() {
+        const msg = document.getElementById('userInput').value.trim();
+        if (!msg) return;
+        document.getElementById('userInput').value = '';
+        await saveChatMessage('user', msg);
+        try {
+            await sendMessageToLLM(msg);
+        } catch (err) {
+            await saveChatMessage('system', 'Error: ' + err.message);
+        }
+    };
+
+    document.getElementById('userInput').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') document.getElementById('sendBtn').click();
+    });
+
+    document.getElementById('clearHistoryBtn').onclick = clearChatHistory;
+
+    document.getElementById('generateReportBtn').onclick = async function() {
+        try {
+            const res = await authFetch('/api/report?workspace=' + chatCurrentWorkspace);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to generate report');
+            const blob = new Blob([data.report], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'report_' + chatCurrentWorkspace + '_' + new Date().toISOString().slice(0,10) + '.md';
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            alert('Error generating report: ' + err.message);
+        }
+    };
+
+    async function loadWorkspacesDrop() {
+        const res = await authFetch('/api/workspaces');
+        const workspaces = await res.json();
+        const select = document.getElementById('workspaceSelect');
+        select.innerHTML = '';
+        for (let i = 0; i < workspaces.length; i++) {
+            const opt = document.createElement('option');
+            opt.value = workspaces[i].id;
+            opt.textContent = workspaces[i].name || workspaces[i].id;
+            select.appendChild(opt);
+        }
+        let found = false;
+        if (chatCurrentWorkspace) {
+            for (let i = 0; i < select.options.length; i++) {
+                if (select.options[i].value === chatCurrentWorkspace) {
+                    select.value = chatCurrentWorkspace;
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if (!found && workspaces.length > 0) {
+            chatCurrentWorkspace = workspaces[0].id;
+            localStorage.setItem('workspace', chatCurrentWorkspace);
+            select.value = chatCurrentWorkspace;
+        }
+        await loadWorkspaceChat();
+        select.addEventListener('change', function() {
+            chatCurrentWorkspace = select.value;
+            localStorage.setItem('workspace', chatCurrentWorkspace);
+            loadWorkspaceChat();
+        });
+    }
+
+    async function loadSystemPrompts() {
+        const res = await authFetch('/api/prompts');
+        const prompts = await res.json();
+        const select = document.getElementById('systemPromptSelect');
+        select.innerHTML = '';
+        for (let i = 0; i < prompts.length; i++) {
+            const opt = document.createElement('option');
+            opt.value = prompts[i];
+            opt.textContent = prompts[i];
+            select.appendChild(opt);
+        }
+        if (prompts.length) select.value = prompts[0];
+        currentSystemPrompt = select.value;
+        select.addEventListener('change', function() { currentSystemPrompt = select.value; });
+    }
+
+    document.getElementById('editPromptBtn').onclick = async function() {
+        const name = document.getElementById('systemPromptSelect').value;
+        if (!name) return;
+        const res = await authFetch('/api/prompts/' + name);
+        const data = await res.json();
+        document.getElementById('promptContent').value = data.content || '';
+        document.getElementById('promptEditor').style.display = 'block';
+    };
+    document.getElementById('savePromptBtn').onclick = async function() {
+        const name = document.getElementById('systemPromptSelect').value;
+        const content = document.getElementById('promptContent').value;
+        await authFetch('/api/prompts/' + name, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: content })
+        });
+        document.getElementById('promptEditor').style.display = 'none';
+        loadSystemPrompts();
+    };
+
+    async function loadOllamaModels() {
+        try {
+            const res = await authFetch('/api/ollama/models');
+            const data = await res.json();
+            const select = document.getElementById('ollamaModel');
+            select.innerHTML = '';
+            if (data.models && data.models.length > 0) {
+                for (let i = 0; i < data.models.length; i++) {
+                    const opt = document.createElement('option');
+                    opt.value = data.models[i];
+                    opt.textContent = data.models[i];
+                    select.appendChild(opt);
+                }
+            } else {
+                const opt = document.createElement('option');
+                opt.value = 'llama3.1:8b';
+                opt.textContent = 'llama3.1:8b (default)';
+                select.appendChild(opt);
+            }
+        } catch (e) {
+            console.warn('Could not fetch Ollama models', e);
+        }
+    }
+
+    document.getElementById('compressChatBtn').onclick = async function() {
+        const response = await authFetch('/api/workspaces/' + chatCurrentWorkspace + '/compress', { method: 'POST' });
+        const data = await response.json();
+        if (data.status === 'ok') {
+            alert('Chat compressed!');
+            loadWorkspaceChat();
+        }
+    };
+    
+    document.getElementById('syncBtn').onclick = async function() {
+        const res = await authFetch('/api/workspaces/' + chatCurrentWorkspace + '/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider: document.getElementById('llmProvider').value })
+        });
+        const data = await res.json();
+        if (data.status === 'ok') {
+            alert('Synced ' + data.synced + ' messages.');
+        } else {
+            alert('Sync failed: ' + data.error);
+        }
+    };
+
+    async function loadKaggleModels() {
+        try {
+            const res = await authFetch('/api/kaggle/models');
+            const data = await res.json();
+            const select = document.getElementById('ollamaModel');
+            select.innerHTML = '';
+            if (data.models && data.models.length > 0) {
+                for (const m of data.models) {
+                    const opt = document.createElement('option');
+                    opt.value = m;
+                    opt.textContent = m;
+                    select.appendChild(opt);
+                }
+            } else {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = 'No models found';
+                select.appendChild(opt);
+            }
+        } catch (e) {
+            console.warn('Could not fetch Kaggle models:', e);
+            const select = document.getElementById('ollamaModel');
+            select.innerHTML = '';
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.textContent = 'Error loading models';
+            select.appendChild(opt);
+        }
+    }
+
+    const autonomousBtn = document.getElementById('autonomousBtn');
+    autonomousBtn.onclick = function() {
+        autonomousActive = !autonomousActive;
+        if (autonomousActive) {
+            autonomousBtn.classList.remove('inactive');
+            autonomousBtn.classList.add('active');
+            autonomousBtn.innerHTML = '<span>\uD83E\uDD16</span> Autonomous On';
+        } else {
+            autonomousBtn.classList.remove('active');
+            autonomousBtn.classList.add('inactive');
+            autonomousBtn.innerHTML = '<span>\uD83E\uDD16</span> Autonomous';
+        }
+    };
+
+    const advancedBtn = document.getElementById('advancedBtn');
+    const advancedPanel = document.getElementById('advancedPanel');
+    const advancedPanelOverlay = document.getElementById('advancedPanelOverlay');
+    const advancedPanelClose = document.getElementById('advancedPanelClose');
+
+    function openAdvancedPanel() {
+        advancedPanel.classList.add('open');
+        advancedPanelOverlay.classList.add('open');
+        advancedBtn.classList.add('open');
+    }
+    function closeAdvancedPanel() {
+        advancedPanel.classList.remove('open');
+        advancedPanelOverlay.classList.remove('open');
+        advancedBtn.classList.remove('open');
+    }
+
+    advancedBtn.onclick = openAdvancedPanel;
+    advancedPanelClose.onclick = closeAdvancedPanel;
+    advancedPanelOverlay.onclick = closeAdvancedPanel;
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') closeAdvancedPanel();
+    });
+
+    document.addEventListener('DOMContentLoaded', function() {
+        loadWorkspacesDrop();
+        loadSystemPrompts();
+        loadOllamaModels();
+        resumeTaskIfNeeded();
+        loadLLMProviders();
+        const providerSelect = document.getElementById('llmProvider');
+        if (providerSelect.value === 'kaggle') {
+            loadKaggleModels();
+        } else {
+            loadOllamaModels();
+        }
+    });
+</script>
+</div>
+{% endblock %}

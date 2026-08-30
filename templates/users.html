@@ -1,0 +1,106 @@
+{% extends base_template %}
+{% block content %}
+<h2>👤 User Management</h2>
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px;">
+    <div class="card">
+        <h3 style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+            <span style="width: 32px; height: 32px; background: linear-gradient(135deg, var(--accent-green), var(--accent-cyan)); border-radius: 10px; display: flex; align-items: center; justify-content: center;">➕</span>
+            Add User
+        </h3>
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+            <input type="text" id="newUsername" placeholder="Username" style="margin: 0;">
+            <input type="password" id="newPassword" placeholder="Password" style="margin: 0;">
+            <button id="addUserBtn" style="margin: 0; background: linear-gradient(135deg, var(--accent-green), rgba(16, 185, 129, 0.8)); color: white; border: none;">Add User</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3 style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+            <span style="width: 32px; height: 32px; background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)); border-radius: 10px; display: flex; align-items: center; justify-content: center;">👥</span>
+            Existing Users
+        </h3>
+        <ul id="userList" style="list-style: none; padding: 0; display: flex; flex-direction: column; gap: 8px;"></ul>
+    </div>
+
+    <div class="card" style="grid-column: 1 / -1;">
+        <h3 style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+            <span style="width: 32px; height: 32px; background: linear-gradient(135deg, var(--accent-amber), var(--accent-red)); border-radius: 10px; display: flex; align-items: center; justify-content: center;">⏳</span>
+            Pending Signups
+        </h3>
+        <ul id="pendingList" style="list-style: none; padding: 0; display: flex; flex-direction: column; gap: 8px;"></ul>
+    </div>
+</div>
+
+<script>
+    async function loadUsers() {
+        const res = await fetchWithCSRF('/api/users');
+        const users = await res.json();
+        const container = document.getElementById('userList');
+        container.innerHTML = '';
+        users.forEach(u => {
+            const li = document.createElement('li');
+            li.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: rgba(0,0,0,0.2); border-radius: 10px; border: 1px solid transparent; transition: all 0.2s;';
+            li.onmouseover = function() { this.style.borderColor = 'var(--border-glow)'; };
+            li.onmouseout = function() { this.style.borderColor = 'transparent'; };
+            li.innerHTML = `<div style="display: flex; align-items: center; gap: 10px;"><div style="width: 32px; height: 32px; background: linear-gradient(135deg, var(--accent-purple), var(--accent-cyan)); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.8rem; color: white;">${u.charAt(0).toUpperCase()}</div><span style="font-weight: 600;">${u}</span></div>`;
+            if (u !== 'saint') {
+                const delBtn = document.createElement('button');
+                delBtn.textContent = 'Delete';
+                delBtn.style.cssText = 'padding: 6px 14px; background: rgba(244, 63, 94, 0.1); border: 1px solid rgba(244, 63, 94, 0.2); color: var(--accent-red); border-radius: 8px; cursor: pointer; font-size: 0.8rem; font-weight: 600;';
+                delBtn.onclick = async () => {
+                    if (confirm(`Delete user ${u}?`)) { await fetchWithCSRF(`/api/users/${u}`, { method: 'DELETE' }); loadUsers(); }
+                };
+                li.appendChild(delBtn);
+            }
+            container.appendChild(li);
+        });
+    }
+
+    async function loadPending() {
+        const res = await fetchWithCSRF('/api/pending_users');
+        const pending = await res.json();
+        const container = document.getElementById('pendingList');
+        container.innerHTML = '';
+        if (!pending.length) {
+            container.innerHTML = '<li style="color: var(--text-muted); text-align: center; padding: 20px;">No pending signups</li>';
+            return;
+        }
+        pending.forEach(p => {
+            const li = document.createElement('li');
+            li.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: rgba(0,0,0,0.2); border-radius: 10px; border: 1px solid transparent; transition: all 0.2s;';
+            li.onmouseover = function() { this.style.borderColor = 'var(--border-glow)'; };
+            li.onmouseout = function() { this.style.borderColor = 'transparent'; };
+            li.innerHTML = `<div><span style="font-weight: 600;">${p.username}</span> <span style="color: var(--text-muted); font-size: 0.8rem; margin-left: 8px;">requested ${new Date(p.created_at).toLocaleString()}</span></div><div style="display: flex; gap: 8px;">`;
+            const confirmBtn = document.createElement('button');
+            confirmBtn.textContent = 'Confirm';
+            confirmBtn.style.cssText = 'padding: 6px 14px; background: linear-gradient(135deg, var(--accent-green), rgba(16, 185, 129, 0.8)); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 0.8rem; font-weight: 600;';
+            confirmBtn.onclick = async () => { await fetchWithCSRF(`/api/pending_users/${p.username}/confirm`, { method: 'POST' }); loadPending(); loadUsers(); };
+            const rejectBtn = document.createElement('button');
+            rejectBtn.textContent = 'Reject';
+            rejectBtn.style.cssText = 'padding: 6px 14px; background: rgba(244, 63, 94, 0.1); border: 1px solid rgba(244, 63, 94, 0.2); color: var(--accent-red); border-radius: 8px; cursor: pointer; font-size: 0.8rem; font-weight: 600;';
+            rejectBtn.onclick = async () => { if (confirm(`Reject user ${p.username}?`)) { await fetchWithCSRF(`/api/pending_users/${p.username}`, { method: 'DELETE' }); loadPending(); } };
+            li.querySelector('div:last-child').appendChild(confirmBtn);
+            li.querySelector('div:last-child').appendChild(rejectBtn);
+            container.appendChild(li);
+        });
+    }
+
+    document.getElementById('addUserBtn').onclick = async () => {
+        const username = document.getElementById('newUsername').value;
+        const password = document.getElementById('newPassword').value;
+        if (!username || !password) return alert('Fill all fields');
+        await fetchWithCSRF('/api/users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+        document.getElementById('newUsername').value = '';
+        document.getElementById('newPassword').value = '';
+        loadUsers();
+    };
+
+    loadUsers();
+    loadPending();
+</script>
+{% endblock %}

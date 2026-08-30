@@ -1,0 +1,82 @@
+steps:
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "-sn"
+      ports: ""
+      additional_args: "-PE -PP -PM"
+    description: "Host discovery via ICMP echo, timestamp, and netmask requests"
+
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "-sS"
+      ports: ""
+      additional_args: "-T4 -p- --min-rate 1000"
+    description: "Full TCP port sweep (all 65535 ports) with SYN stealth scan"
+
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "-sV"
+      ports: ""
+      additional_args: "-T4 --version-intensity 9"
+    description: "Aggressive service version detection on all discovered ports"
+
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "-sC"
+      ports: ""
+      additional_args: "-T4"
+    description: "Default NSE script scan for common vulnerabilities and info disclosure"
+
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "-O"
+      ports: ""
+      additional_args: "-T4 --osscan-guess"
+    description: "Remote OS fingerprinting with aggressive guessing enabled"
+
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "-sU"
+      ports: "53,67,68,69,123,135,137,138,139,161,162,445,500,514,520,631,1434,1900,4500"
+      additional_args: "-T4 --max-retries 2"
+    description: "Common UDP service enumeration (DNS, DHCP, TFTP, NTP, NetBIOS, SNMP, SMB, etc.)"
+
+  - tool: enum4linux
+    arguments:
+      target: "{target}"
+      additional_args: "-a"
+    description: "Full SMB/RPC enumeration: users, shares, passwords, groups, OS info"
+
+  - tool: enum4linux
+    arguments:
+      target: "{target}"
+      additional_args: "-u '' -p '' -P"
+    description: "Null session enumeration to test for anonymous SMB access"
+
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "--script vuln"
+      ports: ""
+      additional_args: "-T4"
+    description: "Vulnerability scanning using NSE vuln category scripts"
+
+  - tool: netcat
+    arguments:
+      target: "{target}"
+      port: "21,22,23,25,53,80,110,143,443,445,993,995,3306,3389,5432,5900,8080"
+      mode: "banner"
+      additional_args: "-v -w 2"
+    description: "Banner grabbing on common services to verify versions and detect misconfigurations"
+
+  - tool: curl
+    arguments:
+      url: "http://{target}/"
+      additional_args: "-I -s --max-time 10"
+    description: "HTTP header inspection for server version, X-Powered-By, and security headers"

@@ -1,0 +1,54 @@
+steps:
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "-sV -sC -O"
+      ports: ""
+      additional_args: "-T4 -p-"
+
+  - tool: enum4linux
+    arguments:
+      target: "{target}"
+      additional_args: "-a"
+
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "-sV"
+      ports: "80,443,8080,8443"
+      additional_args: "-T4"
+
+  - tool: gobuster
+    arguments:
+      url: "http://{target}"
+      mode: "dir"
+      wordlist: "/usr/share/seclists/Discovery/Web-Content/common.txt"
+      additional_args: "-t 50 -x php,txt,html"
+
+  - tool: gobuster
+    arguments:
+      url: "https://{target}"
+      mode: "dir"
+      wordlist: "/usr/share/seclists/Discovery/Web-Content/common.txt"
+      additional_args: "-t 50 -x php,txt,html -k"
+
+  - tool: nikto
+    arguments:
+      target: "{target}"
+      additional_args: "-ssl"
+
+  - tool: hydra
+    arguments:
+      target: "{target}"
+      service: "ssh"
+      userlist: "/usr/share/seclists/Usernames/top-usernames-shortlist.txt"
+      passlist: "/usr/share/seclists/Passwords/Common-Credentials/10k-most-common.txt"
+      additional_args: "-t 4"
+
+  - tool: hydra
+    arguments:
+      target: "{target}"
+      service: "ftp"
+      userlist: "/usr/share/seclists/Usernames/top-usernames-shortlist.txt"
+      passlist: "/usr/share/seclists/Passwords/Common-Credentials/10k-most-common.txt"
+      additional_args: "-t 4"

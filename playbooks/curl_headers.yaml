@@ -1,0 +1,36 @@
+steps:
+  - tool: curl
+    arguments:
+      url: "http://{target}/"
+      additional_args: '-s -I --max-time 10 | grep -iE "x-frame-options|content-security-policy|x-content-type-options|strict-transport-security|x-xss-protection|referrer-policy|permissions-policy"'
+    description: 'HEADERS: Audit security headers presence (CSP, HSTS, XFO, XCTO, XSS, Referrer, Permissions)'
+  - tool: curl
+    arguments:
+      url: "http://{target}/"
+      additional_args: '-s -I --max-time 10 | grep -iE "server|x-powered-by|x-aspnet-version|x-aspnetmvc-version"'
+    description: 'HEADERS: Technology disclosure headers that aid attacker reconnaissance'
+  - tool: curl
+    arguments:
+      url: "http://{target}/"
+      additional_args: '-s -I -H "Origin: https://evil.com" --max-time 10'
+    description: 'HEADERS: CORS preflight test - check Access-Control-Allow-Origin response to arbitrary origin'
+  - tool: curl
+    arguments:
+      url: "http://{target}/"
+      additional_args: '-s -I -H "Origin: null" --max-time 10'
+    description: 'HEADERS: CORS null origin test for sandboxed iframe bypass'
+  - tool: curl
+    arguments:
+      url: "http://{target}/"
+      additional_args: '-s -I -H "Origin: http://{target}.evil.com" --max-time 10'
+    description: 'HEADERS: CORS subdomain wildcard test for reflected origin validation bypass'
+  - tool: curl
+    arguments:
+      url: "http://{target}/page"
+      additional_args: '-s -L -H "Host: evil.com" --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'HEADER: Host header injection for virtual host confusion or cache poisoning'
+  - tool: curl
+    arguments:
+      url: "http://{target}/redirect?url=%0D%0ASet-Cookie:%20hacked=1"
+      additional_args: '-s -L --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'HEADER: CRLF injection in redirect parameter for response splitting'

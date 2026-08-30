@@ -1,0 +1,38 @@
+steps:
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "-sV"
+      ports: ""
+      additional_args: "-T4"
+
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "-sC"
+      ports: ""
+      additional_args: "-T4"
+
+  - tool: enum4linux
+    arguments:
+      target: "{target}"
+      additional_args: "-a"
+
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "-sV"
+      ports: "80,443,8080,8443"
+      additional_args: "-T4"
+
+  - tool: gobuster
+    arguments:
+      url: "http://{target}"
+      mode: "dir"
+      wordlist: "/usr/share/seclists/Discovery/Web-Content/common.txt"
+      additional_args: "-t 50"
+
+  - tool: nikto
+    arguments:
+      target: "{target}"
+      additional_args: "-ssl"

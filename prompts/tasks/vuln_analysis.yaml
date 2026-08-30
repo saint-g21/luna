@@ -1,0 +1,12 @@
+name: vuln_analysis
+description: Vulnerability assessment
+content: |
+  Assess the following potential vulnerability.
+  Determine: TRUE POSITIVE or FALSE POSITIVE.
+  Provide severity (Critical/High/Medium/Low/Info) with justification.
+  Suggest remediation steps.
+variables:
+  - tool
+  - output
+metadata:
+  purpose: quality_control

@@ -1,0 +1,12 @@
+name: web_enum
+description: Web directory enumeration
+content: |
+  Analyze web enumeration output (gobuster/dirb/ffuf).
+  List every discovered path with status code and significance.
+  Flag interesting responses: 200 (content), 301/302 (redirects), 401/403 (auth required), 500 (errors).
+  Suggest next enumeration depth or parameter fuzzing.
+variables:
+  - url
+  - output
+metadata:
+  tools: [gobuster, dirb, ffuf]

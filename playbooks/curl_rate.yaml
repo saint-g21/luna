@@ -1,0 +1,36 @@
+steps:
+  - tool: curl
+    arguments:
+      url: "http://{target}/login"
+      additional_args: '-s -L -X POST -d "username=admin&password=wrong" --max-time 5'
+    description: 'RATE: Baseline failed login for rate limit timing analysis'
+  - tool: curl
+    arguments:
+      url: "http://{target}/login"
+      additional_args: '-s -L -X POST -d "username=admin&password=wrong" --max-time 5'
+    description: 'RATE: Repeated failed login #2 to detect lockout thresholds'
+  - tool: curl
+    arguments:
+      url: "http://{target}/login"
+      additional_args: '-s -L -X POST -d "username=admin&password=wrong" --max-time 5'
+    description: 'RATE: Repeated failed login #3 to detect lockout thresholds'
+  - tool: curl
+    arguments:
+      url: "http://{target}/login"
+      additional_args: '-s -L -X POST -d "username=admin&password=wrong" --max-time 5'
+    description: 'RATE: Repeated failed login #4 to detect lockout thresholds'
+  - tool: curl
+    arguments:
+      url: "http://{target}/login"
+      additional_args: '-s -L -X POST -d "username=admin&password=wrong" --max-time 5'
+    description: 'RATE: Repeated failed login #5 to detect lockout thresholds'
+  - tool: curl
+    arguments:
+      url: "http://{target}/api/search?q=a"
+      additional_args: '-s -L --max-time 5 -w "\nHTTP_CODE:%{http_code} TIME:%{time_total}\n"'
+    description: 'RATE: Baseline search timing for ReDoS detection'
+  - tool: curl
+    arguments:
+      url: "http://{target}/api/search?q=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      additional_args: '-s -L --max-time 10 -w "\nHTTP_CODE:%{http_code} TIME:%{time_total}\n"'
+    description: 'RATE: Long input test for buffer overflow or processing delay detection'

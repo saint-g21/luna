@@ -1,0 +1,56 @@
+steps:
+  - tool: curl
+    arguments:
+      url: "http://{target}/robots.txt"
+      additional_args: '-s -L --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'PATHS: robots.txt for hidden/administrative paths and sitemap locations'
+  - tool: curl
+    arguments:
+      url: "http://{target}/sitemap.xml"
+      additional_args: '-s -L --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'PATHS: sitemap.xml for full application path enumeration'
+  - tool: curl
+    arguments:
+      url: "http://{target}/.well-known/security.txt"
+      additional_args: '-s -L --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'PATHS: security.txt for contact info and policy disclosure'
+  - tool: curl
+    arguments:
+      url: "http://{target}/.git/HEAD"
+      additional_args: '-s -L --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'PATHS: Exposed .git repository check for source code disclosure'
+  - tool: curl
+    arguments:
+      url: "http://{target}/.env"
+      additional_args: '-s -L --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'PATHS: Exposed environment configuration file with credentials'
+  - tool: curl
+    arguments:
+      url: "http://{target}/.htaccess"
+      additional_args: '-s -L --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'PATHS: Apache .htaccess exposure for rewrite rules and config leaks'
+  - tool: curl
+    arguments:
+      url: "http://{target}/.htpasswd"
+      additional_args: '-s -L --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'PATHS: Apache password file exposure for credential hash extraction'
+  - tool: curl
+    arguments:
+      url: "http://{target}/phpinfo.php"
+      additional_args: '-s -L --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'PATHS: phpinfo() exposure for full server configuration disclosure'
+  - tool: curl
+    arguments:
+      url: "http://{target}/admin"
+      additional_args: '-s -L --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'PATHS: Common admin panel path exposure'
+  - tool: curl
+    arguments:
+      url: "http://{target}/api/"
+      additional_args: '-s -L --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'PATHS: API endpoint discovery'
+  - tool: curl
+    arguments:
+      url: "http://{target}/swagger.json"
+      additional_args: '-s -L --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'PATHS: Swagger/OpenAPI specification exposure for full API mapping'

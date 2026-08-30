@@ -1,0 +1,41 @@
+steps:
+  - tool: curl
+    arguments:
+      url: "http://{target}/"
+      additional_args: '-I -s -L --max-time 15 -v'
+    description: 'BASELINE: Full request/response chain with headers, redirects, and server fingerprinting'
+  - tool: curl
+    arguments:
+      url: "http://{target}/"
+      additional_args: '-s -o /dev/null -w "HTTP_CODE:%{http_code}\nSIZE:%{size_download}\nTIME:%{time_total}\nREDIRECT:%{redirect_url}\nCONTENT_TYPE:%{content_type}\n"'
+    description: 'BASELINE: Structured response metrics for baseline comparison'
+  - tool: curl
+    arguments:
+      url: "http://{target}/"
+      additional_args: '-s -L -D - -o /dev/null --max-time 15'
+    description: 'BASELINE: Dump all response headers to analyze Server, X-Powered-By, Set-Cookie, X-Frame-Options, CSP, HSTS'
+  - tool: curl
+    arguments:
+      url: "http://{target}/"
+      additional_args: '-s -L --compressed --max-time 15'
+    description: 'BASELINE: Test compression support (gzip/deflate) and response body size variance'
+  - tool: curl
+    arguments:
+      url: "http://{target}/"
+      additional_args: '-s -L -A "Mozilla/5.0 (compatible; Googlebot/2.1)" --max-time 15'
+    description: 'RECON: User-Agent spoofing to test for bot-specific content or access controls'
+  - tool: curl
+    arguments:
+      url: "http://{target}/"
+      additional_args: '-s -L -A "" --max-time 15'
+    description: 'RECON: Empty User-Agent test for handling of missing headers'
+  - tool: curl
+    arguments:
+      url: "http://{target}/"
+      additional_args: '-s -L -H "X-Forwarded-For: 127.0.0.1" -H "X-Real-IP: 127.0.0.1" --max-time 15'
+    description: 'RECON: IP spoofing via X-Forwarded-For to test for IP-based access control bypass'
+  - tool: curl
+    arguments:
+      url: "http://{target}/"
+      additional_args: '-s -L -H "X-Originating-IP: 127.0.0.1" -H "X-Remote-IP: 127.0.0.1" -H "X-Client-IP: 127.0.0.1" --max-time 15'
+    description: 'RECON: Additional IP header spoofing (X-Originating-IP, X-Remote-IP, X-Client-IP)'

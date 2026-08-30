@@ -1,0 +1,88 @@
+steps:
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "-sS"
+      ports: "88,135,139,389,445,464,636,3268,3269,5985,9389"
+      additional_args: "-T4 --reason"
+    description: "Active Directory port discovery: Kerberos, RPC, NetBIOS, LDAP, SMB, WinRM"
+
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "-sV"
+      ports: "88,135,139,389,445,464,636,3268,3269,5985,9389"
+      additional_args: "-T4"
+    description: "Service version detection on all AD-related ports"
+
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "--script smb-os-discovery,smb-security-mode,smb-protocols"
+      ports: "445"
+      additional_args: "-T4"
+    description: "SMB OS discovery, security mode, and protocol version enumeration"
+
+  - tool: enum4linux
+    arguments:
+      target: "{target}"
+      additional_args: "-a"
+    description: "Full SMB enumeration: users, shares, groups, passwords, OS info, policy"
+
+  - tool: enum4linux
+    arguments:
+      target: "{target}"
+      additional_args: "-u '' -p '' -P"
+    description: "Anonymous/null session enumeration test"
+
+  - tool: enum4linux
+    arguments:
+      target: "{target}"
+      additional_args: "-u guest -p '' -P"
+    description: "Guest account enumeration test"
+
+  - tool: enum4linux
+    arguments:
+      target: "{target}"
+      additional_args: "-S"
+    description: "Share enumeration to identify accessible file shares"
+
+  - tool: enum4linux
+    arguments:
+      target: "{target}"
+      additional_args: "-U"
+    description: "User enumeration via RID cycling and known SIDs"
+
+  - tool: hydra
+    arguments:
+      target: "{target}"
+      service: "smb"
+      port: "445"
+      wordlist_user: "/usr/share/seclists/Usernames/top-usernames-shortlist.txt"
+      wordlist_pass: "/usr/share/seclists/Passwords/darkweb2017-top100.txt"
+      additional_args: "-t 4 -V"
+    description: "SMB password brute force against discovered accounts"
+
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "--script ldap-search"
+      ports: "389,636"
+      additional_args: "-T4"
+    description: "LDAP directory enumeration for domain objects and structure"
+
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "--script msrpc-enum"
+      ports: "135"
+      additional_args: "-T4"
+    description: "MSRPC endpoint enumeration for exposed services and interfaces"
+
+  - tool: netcat
+    arguments:
+      target: "{target}"
+      port: "445"
+      mode: "banner"
+      additional_args: "-v -w 2"
+    description: "SMB banner verification and version confirmation"

@@ -1,0 +1,97 @@
+{% extends base_template %}
+{% block content %}
+<h2>📄 Knowledge Base (RAG)</h2>
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px;">
+    <div class="card">
+        <h3 style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+            <span style="width: 32px; height: 32px; background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)); border-radius: 10px; display: flex; align-items: center; justify-content: center;">📤</span>
+            Upload Document
+        </h3>
+        <div id="dropZone" style="border: 2px dashed var(--border-subtle); border-radius: 16px; padding: 40px; text-align: center; transition: all 0.3s; cursor: pointer; background: rgba(0,0,0,0.1);">
+            <div style="font-size: 2.5rem; margin-bottom: 12px;">📁</div>
+            <p style="color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 8px;">Drop your file here or click to browse</p>
+            <p style="color: var(--text-muted); font-size: 0.8rem;">Supports .txt, .pdf, .json, .csv, .md</p>
+            <input type="file" id="fileInput" accept=".txt,.pdf,.json,.csv,.md" style="display: none;">
+        </div>
+        <button id="uploadBtn" style="margin-top: 16px; width: 100%; background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)); color: white; border: none;">Upload Document</button>
+        <div id="uploadStatus" style="margin-top: 12px; font-size: 0.9rem; color: var(--text-muted);"></div>
+    </div>
+
+    <div class="card">
+        <h3 style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+            <span style="width: 32px; height: 32px; background: linear-gradient(135deg, var(--accent-purple), var(--accent-cyan)); border-radius: 10px; display: flex; align-items: center; justify-content: center;">🔍</span>
+            Search Knowledge
+        </h3>
+        <input type="text" id="searchQuery" placeholder="Ask about your documents..." style="margin-bottom: 12px;">
+        <button id="searchBtn" style="width: 100%; background: linear-gradient(135deg, var(--accent-purple), var(--accent-cyan)); color: white; border: none;">Search</button>
+        <div id="searchResults" style="margin-top: 16px; display: flex; flex-direction: column; gap: 12px;"></div>
+    </div>
+</div>
+
+<script>
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.style.borderColor = 'var(--accent-cyan)';
+        dropZone.style.background = 'rgba(6, 182, 212, 0.05)';
+        dropZone.style.boxShadow = '0 0 30px rgba(6, 182, 212, 0.1)';
+    });
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.style.borderColor = 'var(--border-subtle)';
+        dropZone.style.background = 'rgba(0,0,0,0.1)';
+        dropZone.style.boxShadow = 'none';
+    });
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.style.borderColor = 'var(--border-subtle)';
+        dropZone.style.background = 'rgba(0,0,0,0.1)';
+        dropZone.style.boxShadow = 'none';
+        const files = e.dataTransfer.files;
+        if (files.length) fileInput.files = files;
+    });
+    fileInput.addEventListener('change', () => {
+        if (fileInput.files.length) {
+            dropZone.innerHTML = `<div style="font-size: 2.5rem; margin-bottom: 12px;">📄</div><p style="color: var(--accent-cyan); font-weight: 600;">${fileInput.files[0].name}</p><p style="color: var(--text-muted); font-size: 0.8rem;">Ready to upload</p>`;
+        }
+    });
+
+    document.getElementById('uploadBtn').onclick = async () => {
+        const file = document.getElementById('fileInput').files[0];
+        if (!file) return;
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetchWithCSRF('/api/rag/upload', { method: 'POST', body: formData });
+        const data = await res.json();
+        document.getElementById('uploadStatus').innerHTML = `<span style="color: var(--accent-green); font-weight: 600;">✅ Uploaded</span> — ${data.chunks} chunks processed`;
+        setTimeout(() => {
+            dropZone.innerHTML = `<div style="font-size: 2.5rem; margin-bottom: 12px;">📁</div><p style="color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 8px;">Drop your file here or click to browse</p><p style="color: var(--text-muted); font-size: 0.8rem;">Supports .txt, .pdf, .json, .csv, .md</p>`;
+            fileInput.value = '';
+        }, 3000);
+    };
+
+    document.getElementById('searchBtn').onclick = async () => {
+        const query = document.getElementById('searchQuery').value;
+        const res = await fetchWithCSRF('/api/rag/search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query })
+        });
+        const data = await res.json();
+        let html = '';
+        for (let i = 0; i < data.documents.length; i++) {
+            html += `<div class="card" style="padding: 16px; margin: 0;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                    <span style="width: 6px; height: 6px; background: var(--accent-cyan); border-radius: 50%; box-shadow: 0 0 8px var(--accent-cyan);"></span>
+                    <strong style="color: var(--accent-cyan); font-size: 0.85rem;">${data.metadatas[i].source}</strong>
+                </div>
+                <p style="color: var(--text-secondary); font-size: 0.9rem; line-height: 1.6;">${data.documents[i].substring(0, 300)}...</p>
+            </div>`;
+        }
+        document.getElementById('searchResults').innerHTML = html || '<p style="color: var(--text-muted); text-align: center;">No results found</p>';
+    };
+</script>
+{% endblock %}

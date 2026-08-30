@@ -1,0 +1,8 @@
+name: service_fingerprint
+description: Identify services from banners
+content: |
+  Fingerprint the following service banner.
+  Identify the exact product, version, and operating system if possible.
+  Suggest default credentials and known misconfigurations.
+variables:
+  - banner

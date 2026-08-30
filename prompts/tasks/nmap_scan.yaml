@@ -1,0 +1,13 @@
+name: nmap_scan
+description: Instructions for nmap scanning and interpretation
+content: |
+  You are interpreting Nmap scan results. 
+  For each open port, identify the service name, version, and potential vulnerabilities.
+  Map discovered services to likely attack vectors.
+  If a service version is identified, suggest CVE search keywords.
+  Format your response as structured findings.
+variables:
+  - target
+  - ports
+metadata:
+  tool: nmap

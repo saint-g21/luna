@@ -1,0 +1,41 @@
+steps:
+  - tool: curl
+    arguments:
+      url: "http://{target}/"
+      additional_args: '-X OPTIONS -s -I --max-time 10'
+    description: 'METHODS: OPTIONS request to enumerate allowed HTTP methods (Allow header)'
+  - tool: curl
+    arguments:
+      url: "http://{target}/"
+      additional_args: '-X PUT -s -I --max-time 10 -d "test"'
+    description: 'METHODS: PUT method test for arbitrary file upload capability'
+  - tool: curl
+    arguments:
+      url: "http://{target}/"
+      additional_args: '-X DELETE -s -I --max-time 10'
+    description: 'METHODS: DELETE method test for unauthorized resource deletion'
+  - tool: curl
+    arguments:
+      url: "http://{target}/"
+      additional_args: '-X PATCH -s -I --max-time 10 -d "test"'
+    description: 'METHODS: PATCH method test for partial update vulnerabilities'
+  - tool: curl
+    arguments:
+      url: "http://{target}/"
+      additional_args: '-X TRACE -s -I --max-time 10'
+    description: 'METHODS: TRACE method test for XST (Cross-Site Tracing) vulnerability'
+  - tool: curl
+    arguments:
+      url: "http://{target}/"
+      additional_args: '-X DEBUG -s -I --max-time 10'
+    description: 'METHODS: DEBUG method test for ASP.NET debugging endpoint exposure'
+  - tool: curl
+    arguments:
+      url: "http://{target}/"
+      additional_args: '-X CONNECT -s -I --max-time 10'
+    description: 'METHODS: CONNECT method test for proxy/tunnel abuse'
+  - tool: curl
+    arguments:
+      url: "http://{target}/"
+      additional_args: '-X FOO -s -I --max-time 10'
+    description: 'METHODS: Arbitrary/invalid method test for unexpected behavior or info disclosure'

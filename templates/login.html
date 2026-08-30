@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Moonshot Agent - Login</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #05080f;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Inter', system-ui, sans-serif;
+            padding: 20px;
+            overflow: hidden;
+            position: relative;
+        }
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(6, 182, 212, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(6, 182, 212, 0.03) 1px, transparent 1px);
+            background-size: 50px 50px;
+            pointer-events: none;
+        }
+        body::after {
+            content: '';
+            position: fixed;
+            top: -30%;
+            right: -20%;
+            width: 60%;
+            height: 80%;
+            background: radial-gradient(ellipse, rgba(139, 92, 246, 0.08) 0%, transparent 70%);
+            pointer-events: none;
+        }
+        .auth-container {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            max-width: 400px;
+        }
+        .auth-glow {
+            position: absolute;
+            inset: -2px;
+            background: linear-gradient(135deg, #06b6d4, #8b5cf6, #06b6d4);
+            border-radius: 20px;
+            z-index: -1;
+            opacity: 0.5;
+            filter: blur(20px);
+            animation: glowPulse 3s ease-in-out infinite;
+        }
+        @keyframes glowPulse {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 0.6; }
+        }
+        .login-card {
+            background: linear-gradient(135deg, rgba(13, 18, 30, 0.95), rgba(10, 15, 25, 0.98));
+            backdrop-filter: blur(20px);
+            padding: 40px 32px;
+            border-radius: 18px;
+            border: 1px solid rgba(100, 200, 255, 0.1);
+            position: relative;
+            overflow: hidden;
+        }
+        .login-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #06b6d4, #8b5cf6, transparent);
+        }
+        .logo {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+        .logo-icon {
+            font-size: 3rem;
+            margin-bottom: 12px;
+            display: block;
+        }
+        .logo h2 {
+            font-size: 1.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #06b6d4, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.02em;
+        }
+        .logo p {
+            color: #64748b;
+            font-size: 0.85rem;
+            margin-top: 6px;
+        }
+        .input-group {
+            margin-bottom: 16px;
+            position: relative;
+        }
+        .input-group label {
+            display: block;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #64748b;
+            margin-bottom: 6px;
+            font-weight: 600;
+        }
+        input {
+            width: 100%;
+            padding: 14px 16px;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(100, 200, 255, 0.1);
+            border-radius: 12px;
+            color: #f1f5f9;
+            font-size: 0.95rem;
+            font-family: 'Inter', sans-serif;
+            transition: all 0.2s;
+        }
+        input:focus {
+            outline: none;
+            border-color: #06b6d4;
+            box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.1), 0 0 20px rgba(6, 182, 212, 0.1);
+        }
+        input::placeholder { color: #475569; }
+        button[type="submit"] {
+            width: 100%;
+            padding: 14px;
+            margin-top: 8px;
+            background: linear-gradient(135deg, #06b6d4, #8b5cf6);
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-weight: 700;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+            overflow: hidden;
+        }
+        button[type="submit"]::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, transparent, rgba(255,255,255,0.2), transparent);
+            transform: translateX(-100%);
+            transition: transform 0.6s;
+        }
+        button[type="submit"]:hover::after { transform: translateX(100%); }
+        button[type="submit"]:hover {
+            box-shadow: 0 8px 30px rgba(6, 182, 212, 0.3);
+            transform: translateY(-1px);
+        }
+        .error {
+            background: rgba(244, 63, 94, 0.1);
+            border: 1px solid rgba(244, 63, 94, 0.2);
+            color: #f43f5e;
+            text-align: center;
+            margin: 16px 0;
+            padding: 10px;
+            border-radius: 10px;
+            font-size: 0.9rem;
+        }
+        .login-link {
+            text-align: center;
+            margin-top: 24px;
+            color: #64748b;
+            font-size: 0.9rem;
+        }
+        .login-link a {
+            color: #06b6d4;
+            text-decoration: none;
+            font-weight: 600;
+            transition: color 0.2s;
+        }
+        .login-link a:hover { color: #8b5cf6; }
+    </style>
+</head>
+<body>
+<div class="auth-container">
+    <div class="auth-glow"></div>
+    <div class="login-card">
+        <div class="logo">
+            <span class="logo-icon">🦞</span>
+            <h2>Moonshot Agent</h2>
+            <p>Secure Access Portal</p>
+        </div>
+        {% if error %}<div class="error">{{ error }}</div>{% endif %}
+        <form method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="input-group">
+                <label>Username</label>
+                <input type="text" name="username" placeholder="Enter your username" required>
+            </div>
+            <div class="input-group">
+                <label>Password</label>
+                <input type="password" name="password" placeholder="Enter your password" required>
+            </div>
+            <button type="submit">🔐 Sign In</button>
+        </form>
+        <div class="login-link">No account? <a href="{{ url_for('signup') }}">Create one</a></div>
+    </div>
+</div>
+</body>
+</html>

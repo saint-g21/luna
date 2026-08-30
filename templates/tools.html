@@ -1,0 +1,255 @@
+{% extends base_template %}
+{% block content %}
+<h2>🔧 Tool Executor</h2>
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<div class="card" style="margin-bottom: 24px;">
+    <h3 style="display: flex; align-items: center; gap: 10px;">
+        <span style="width: 32px; height: 32px; background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)); border-radius: 10px; display: flex; align-items: center; justify-content: center;">🎯</span>
+        MCP Router — Unified Tool Access
+    </h3>
+    <p style="color: var(--text-muted); font-size: 0.9rem;">All tools are loaded dynamically from the MCP router. Select a tool to configure and execute.</p>
+</div>
+
+<div id="tools-app" style="display: flex; gap: 20px; height: calc(100vh - 220px);">
+    <div style="min-width: 240px; max-width: 280px; display: flex; flex-direction: column;">
+        <div class="card" style="flex: 1; padding: 16px; overflow: hidden; display: flex; flex-direction: column;">
+            <h3 style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); margin-bottom: 12px;">Tools</h3>
+            <div id="toolStatus" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px;">Loading...</div>
+            <ul id="toolsList" style="list-style: none; padding: 0; overflow-y: auto; flex: 1;"></ul>
+        </div>
+    </div>
+    
+    <div style="flex: 1; min-width: 0;">
+        <div class="card" style="height: 100%; display: flex; flex-direction: column;">
+            <div class="tool-header" style="margin-bottom: 20px;">
+                <h3 id="toolName" style="color: var(--accent-cyan); font-size: 1.25rem; margin-bottom: 4px;">Select a tool</h3>
+                <p id="toolDesc" style="color: var(--text-muted); font-size: 0.85rem;"></p>
+            </div>
+            <div id="toolArgsContainer" style="display: none; flex: 1; overflow-y: auto;">
+                <label style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); font-weight: 600; margin-bottom: 8px;">Arguments (JSON)</label>
+                <textarea id="toolArgs" rows="8" style="width: 100%; font-family: var(--font-mono); font-size: 0.85rem; margin-bottom: 16px;"></textarea>
+                <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 16px;">
+                    <button id="executeBtn" style="background: linear-gradient(135deg, var(--accent-green), rgba(16, 185, 129, 0.8)); color: white; border: none; margin: 0;">▶ Execute</button>
+                    <button id="resetArgsBtn" style="background: rgba(100, 116, 139, 0.1); border-color: rgba(100, 116, 139, 0.2); color: var(--text-muted); margin: 0;">↺ Reset</button>
+                    <label style="margin-left: auto; font-size: 0.85rem; display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                        <input type="checkbox" id="streamCheckbox" style="width: auto; margin: 0;">
+                        <span>Stream output</span>
+                    </label>
+                    <label style="font-size: 0.85rem; display: flex; align-items: center; gap: 6px;">
+                        <span>Timeout (s):</span>
+                        <input type="number" id="timeoutInput" value="600" min="10" max="3600" style="width: 70px; margin: 0;">
+                    </label>
+                </div>
+                <div id="streamOutput" class="card" style="display: none; background: rgba(0,0,0,0.4); padding: 16px; font-family: var(--font-mono); font-size: 0.8rem; white-space: pre-wrap; max-height: 200px; overflow-y: auto; margin-bottom: 16px;"></div>
+                <div id="errorMessage" style="color: var(--accent-red); margin-bottom: 16px; display: none; padding: 12px; background: rgba(244, 63, 94, 0.05); border-radius: 10px; border: 1px solid rgba(244, 63, 94, 0.15);"></div>
+                <div id="outputContainer" style="display: none;">
+                    <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                        <button id="rawToggle" class="active" style="padding: 6px 14px; font-size: 0.8rem; margin: 0;">Raw JSON</button>
+                        <button id="formatToggle" style="padding: 6px 14px; font-size: 0.8rem; margin: 0;">Format as Text</button>
+                        <button id="copyRawBtn" style="margin-left: auto; padding: 6px 14px; font-size: 0.8rem; margin: 0; background: rgba(6, 182, 212, 0.1); border-color: rgba(6, 182, 212, 0.2); color: var(--accent-cyan);">📋 Copy Raw</button>
+                    </div>
+                    <pre id="result" style="display: none; font-size: 0.8rem;"></pre>
+                    <div id="formattedResult" style="display: none; font-size: 0.85rem; white-space: pre-wrap; color: var(--text-secondary);"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ---------- SELF-TEST: verify script is running ----------
+    console.log('✅ tools.html script loaded');
+
+    // ---------- CSRF token helper ----------
+    const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    const CSRF_TOKEN = csrfMeta ? csrfMeta.getAttribute('content') : '';
+    if (!CSRF_TOKEN) {
+        console.warn('⚠️ CSRF token not found in meta tag.');
+    } else {
+        console.log('✅ CSRF token found:', CSRF_TOKEN.substring(0, 20) + '...');
+    }
+
+    // ---------- API fetch with CSRF ----------
+    async function apiFetch(url, options = {}) {
+        options.headers = {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': CSRF_TOKEN,
+            ...(options.headers || {})
+        };
+        options.credentials = 'include';
+        return fetch(url, options);
+    }
+
+    // ---------- Page logic ----------
+    let tools = [];
+    let currentTool = null;
+    let lastResult = null;
+    let lastRawJson = '';
+
+    function getGlobalTarget() {
+        return localStorage.getItem('globalTarget') || '';
+    }
+
+    async function loadTools() {
+        const statusDiv = document.getElementById('toolStatus');
+        const listContainer = document.getElementById('toolsList');
+        statusDiv.textContent = 'Loading tools...';
+        try {
+            console.log('Fetching /router/tools ...');
+            const response = await apiFetch('/router/tools');
+            if (!response.ok) {
+                const errText = await response.text();
+                throw new Error(`HTTP ${response.status}: ${errText}`);
+            }
+            const data = await response.json();
+            tools = data;
+            renderToolsList();
+            if (tools.length) {
+                const uniqueServers = new Set(tools.map(t => t.server));
+                statusDiv.innerHTML = `<span style="color: var(--accent-green); font-weight: 600;">✅ ${tools.length} tools</span> <span style="color: var(--text-muted); font-size: 0.75rem;">from ${uniqueServers.size} server(s)</span>`;
+                selectTool(tools[0].name);
+            } else {
+                statusDiv.textContent = '❌ No tools discovered';
+            }
+        } catch (err) {
+            statusDiv.innerHTML = `<span style="color: var(--accent-red);">❌ ${err.message}</span>`;
+            console.error('loadTools error:', err);
+        }
+    }
+
+    function renderToolsList() {
+        const container = document.getElementById('toolsList');
+        if (!tools.length) { container.innerHTML = '<li style="color: var(--text-muted); padding: 8px;">No tools</li>'; return; }
+        container.innerHTML = '';
+        tools.forEach(tool => {
+            const li = document.createElement('li');
+            li.textContent = tool.name;
+            li.style.cssText = 'padding: 10px 12px; margin: 3px 0; background: rgba(0,0,0,0.2); border-radius: 8px; cursor: pointer; font-family: var(--font-mono); font-size: 0.8rem; border: 1px solid transparent; transition: all 0.2s; color: var(--text-secondary);';
+            li.title = `Server: ${tool.server}`;
+            li.onmouseover = function() { this.style.borderColor = 'var(--border-glow)'; this.style.color = 'var(--text-primary)'; this.style.background = 'var(--bg-hover)'; };
+            li.onmouseout = function() { this.style.borderColor = 'transparent'; this.style.color = 'var(--text-secondary)'; this.style.background = 'rgba(0,0,0,0.2)'; };
+            li.onclick = () => selectTool(tool.name);
+            container.appendChild(li);
+        });
+    }
+
+    function selectTool(toolName) {
+        currentTool = tools.find(t => t.name === toolName);
+        if (!currentTool) return;
+        document.getElementById('toolName').textContent = currentTool.name;
+        document.getElementById('toolDesc').textContent = `Server: ${currentTool.server}`;
+        document.getElementById('toolArgsContainer').style.display = 'block';
+        document.getElementById('outputContainer').style.display = 'none';
+        populateArgs(currentTool);
+    }
+
+    function getDefaultArgs(tool) {
+        const schema = tool.inputSchema || { properties: {} };
+        const globalTarget = getGlobalTarget();
+        const defaultArgs = {};
+        const required = schema.required || [];
+        for (const [key, prop] of Object.entries(schema.properties)) {
+            if (required.includes(key) && ['target', 'host', 'url'].includes(key)) {
+                defaultArgs[key] = globalTarget || 'moonshot.ke.com';
+            } else if (key === 'target' || key === 'host' || key === 'url') {
+                defaultArgs[key] = globalTarget || '';
+            } else {
+                defaultArgs[key] = prop.default || (prop.type === 'string' ? '' : null);
+            }
+        }
+        return defaultArgs;
+    }
+
+    function populateArgs(tool) {
+        const defaultArgs = getDefaultArgs(tool);
+        document.getElementById('toolArgs').value = JSON.stringify(defaultArgs, null, 2);
+        document.getElementById('errorMessage').style.display = 'none';
+    }
+
+    async function executeTool() {
+        if (!currentTool) { alert('No tool selected.'); return; }
+        const streamChecked = document.getElementById('streamCheckbox').checked;
+        if (streamChecked) { alert('Streaming via router not yet implemented.'); return; }
+        const argsText = document.getElementById('toolArgs').value;
+        let args;
+        const errorDiv = document.getElementById('errorMessage');
+        errorDiv.style.display = 'none';
+        try { args = JSON.parse(argsText); } catch (e) { errorDiv.textContent = 'Invalid JSON: ' + e.message; errorDiv.style.display = 'block'; return; }
+
+        const resultDiv = document.getElementById('result');
+        const formattedDiv = document.getElementById('formattedResult');
+        const outputContainer = document.getElementById('outputContainer');
+        outputContainer.style.display = 'block';
+        resultDiv.style.display = 'none'; formattedDiv.style.display = 'none';
+        resultDiv.innerText = 'Executing...'; formattedDiv.innerText = 'Executing...';
+
+        const execBtn = document.getElementById('executeBtn');
+        execBtn.disabled = true;
+        execBtn.style.opacity = '0.7';
+        try {
+            const response = await apiFetch('/router/call', {
+                method: 'POST',
+                body: JSON.stringify({ tool: currentTool.name, arguments: args })
+            });
+            if (!response.ok) { const errText = await response.text(); throw new Error(`HTTP ${response.status}: ${errText}`); }
+            const result = await response.json();
+            lastResult = result; lastRawJson = JSON.stringify(result, null, 2);
+            resultDiv.innerText = lastRawJson;
+            formattedDiv.innerText = formatJsonToText(result);
+            resultDiv.style.display = 'block'; formattedDiv.style.display = 'none';
+            document.getElementById('rawToggle').classList.add('active');
+            document.getElementById('formatToggle').classList.remove('active');
+        } catch (err) {
+            const errMsg = `Error: ${err.message}`;
+            resultDiv.innerText = errMsg; formattedDiv.innerText = errMsg;
+            resultDiv.style.display = 'block'; formattedDiv.style.display = 'none';
+        } finally {
+            execBtn.disabled = false; execBtn.style.opacity = '1';
+        }
+    }
+
+    function formatJsonToText(data) {
+        if (data === null || data === undefined) return 'No data';
+        if (typeof data === 'string') return data;
+        if (typeof data === 'number' || typeof data === 'boolean') return String(data);
+        if (Array.isArray(data)) return data.map((item, idx) => `[${idx}] ${formatJsonToText(item)}`).join('\n');
+        if (typeof data === 'object') {
+            let lines = [];
+            for (const [key, value] of Object.entries(data)) {
+                if (value && typeof value === 'object') { lines.push(`${key}:`); lines.push(formatJsonToText(value).split('\n').map(l => '  ' + l).join('\n')); }
+                else lines.push(`${key}: ${value}`);
+            }
+            return lines.join('\n');
+        }
+        return String(data);
+    }
+
+    // ---------- Event listeners ----------
+    document.getElementById('rawToggle').onclick = () => {
+        document.getElementById('result').style.display = 'block';
+        document.getElementById('formattedResult').style.display = 'none';
+        document.getElementById('rawToggle').style.background = 'var(--bg-hover)';
+        document.getElementById('formatToggle').style.background = 'transparent';
+    };
+    document.getElementById('formatToggle').onclick = () => {
+        document.getElementById('result').style.display = 'none';
+        document.getElementById('formattedResult').style.display = 'block';
+        document.getElementById('formatToggle').style.background = 'var(--bg-hover)';
+        document.getElementById('rawToggle').style.background = 'transparent';
+    };
+    document.getElementById('copyRawBtn').onclick = () => {
+        if (!lastRawJson) return;
+        navigator.clipboard?.writeText(lastRawJson).then(() => {
+            const btn = document.getElementById('copyRawBtn');
+            btn.textContent = '✅ Copied!';
+            setTimeout(() => btn.textContent = '📋 Copy Raw', 2000);
+        }).catch(() => {});
+    };
+
+    document.getElementById('executeBtn').onclick = executeTool;
+    document.getElementById('resetArgsBtn').onclick = () => { if (currentTool) populateArgs(currentTool); };
+
+    // ---------- Initialize ----------
+    document.addEventListener('DOMContentLoaded', loadTools);
+</script>
+{% endblock %}

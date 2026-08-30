@@ -1,0 +1,31 @@
+steps:
+  - tool: curl
+    arguments:
+      url: "https://{target}/"
+      additional_args: '-s -I --max-time 10 -w "\nHTTP_CODE:%{http_code} SSL_VERIFY:%{ssl_verify_result}\n"'
+    description: 'SSL: HTTPS baseline with SSL verification result check'
+  - tool: curl
+    arguments:
+      url: "https://{target}/"
+      additional_args: '-s -I --max-time 10 -k -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'SSL: Test for certificate validation bypass (-k insecure mode)'
+  - tool: curl
+    arguments:
+      url: "http://{target}/"
+      additional_args: '-s -I --max-time 10 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'SSL: HTTP to HTTPS downgrade test - check for HSTS enforcement'
+  - tool: curl
+    arguments:
+      url: "https://{target}/"
+      additional_args: '-s -I --max-time 10 --tlsv1.0 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'SSL: Force TLS 1.0 to test for weak protocol support'
+  - tool: curl
+    arguments:
+      url: "https://{target}/"
+      additional_args: '-s -I --max-time 10 --tlsv1.3 -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'SSL: Force TLS 1.3 to verify latest protocol support'
+  - tool: curl
+    arguments:
+      url: "https://{target}/"
+      additional_args: '-s -I --max-time 10 --ciphers "ALL:eNULL" -w "\nHTTP_CODE:%{http_code}\n"'
+    description: 'SSL: Weak/null cipher suite acceptance test'

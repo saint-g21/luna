@@ -1,12 +1,14 @@
 # --- Web & API ---
 Flask>=3.0.0
+flask_limiter
+flask_wtf
 requests>=2.31.0
 fastapi
 flask_login
 flask_cors
 
 # --- MCP ---
-mcp>=1.0.0
+mcp<2
 
 # --- Database ---
 sqlalchemy>=2.0.0
@@ -14,6 +16,7 @@ sqlalchemy>=2.0.0
 # --- LLM & AI ---
 openai>=1.0.0        # For Ollama compatibility (OpenAI-compatible API)
 pyyaml>=6.0          # For prompt & tool configs
+pypdf2
 
 # --- Kaggle tunnel (optional, local only) ---
 pyngrok>=7.0.0
@@ -34,3 +37,5 @@ duckdb>=0.8.0  # ChromaDB backend
 
 # --- data processing ---
 pandas>=2.0.0  # For CSV handling
+
+tiktoken

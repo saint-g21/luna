@@ -1,0 +1,36 @@
+# --- Web & API ---
+Flask>=3.0.0
+requests>=2.31.0
+fastapi
+flask_login
+flask_cors
+
+# --- MCP ---
+mcp>=1.0.0
+
+# --- Database ---
+sqlalchemy>=2.0.0
+
+# --- LLM & AI ---
+openai>=1.0.0        # For Ollama compatibility (OpenAI-compatible API)
+pyyaml>=6.0          # For prompt & tool configs
+
+# --- Kaggle tunnel (optional, local only) ---
+pyngrok>=7.0.0
+
+# --- Utilities ---
+cryptography>=41.0.0
+python-dotenv>=1.0.0
+
+# --- osint ---
+python-whois>=0.8.0
+dnspython>=2.4.0
+requests>=2.31.0
+
+# --- RAG & Emneddings ---
+chromadb>=0.4.0
+sentence-transformers>=2.2.0
+duckdb>=0.8.0  # ChromaDB backend
+
+# --- data processing ---
+pandas>=2.0.0  # For CSV handling

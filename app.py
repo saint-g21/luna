@@ -266,7 +266,7 @@ def load_chat_history(username, workspace_id):
 
 def save_chat_history(username, workspace_id, history):
     filepath = get_workspace_chat_file(username, workspace_id)
-    get_workspace_dir(username, workspace_id).mkdir(exist_ok=True)
+    safe_join(get_workspace_dir(username, workspace_id).mkdir(exist_ok=True))
     with open(filepath, "w") as f:
         json.dump(history, f)
 
@@ -274,21 +274,21 @@ def delete_chat_history(username, workspace_id):
     filepath = get_workspace_chat_file(username, workspace_id)
     if filepath.exists():
         filepath.unlink()
-    mem_file = get_workspace_dir(username, workspace_id) / "session_memory.json"
+    mem_file = safe_join(get_workspace_dir(username, workspace_id) / "session_memory.json")
     if mem_file.exists():
         mem_file.unlink()
     save_chat_history(username, workspace_id, [])
 
 def get_workspace_session_memory(username, workspace_id):
-    mem_file = get_workspace_dir(username, workspace_id) / "session_memory.json"
+    mem_file = safe_join(get_workspace_dir(username, workspace_id) / "session_memory.json")
     if mem_file.exists():
         with open(mem_file) as f:
             return json.load(f)
     return {"executed_commands": [], "current_phase": "reconnaissance"}
 
 def save_workspace_session_memory(username, workspace_id, memory):
-    mem_file = get_workspace_dir(username, workspace_id) / "session_memory.json"
-    get_workspace_dir(username, workspace_id).mkdir(exist_ok=True)
+    mem_file = safe_join(get_workspace_dir(username, workspace_id) / "session_memory.json")
+    safe_join(get_workspace_dir(username, workspace_id).mkdir(exist_ok=True))
     with open(mem_file, "w") as f:
         json.dump(memory, f)
 
@@ -1788,7 +1788,6 @@ mcp_manager = MCPSessionManager()
 # ---------- MCP Proxy Endpoints (multi-server) ----------
 @app.route('/mcp/sse')
 @login_required
-@csrf.exempt
 def mcp_sse():
     server_name = request.args.get('server')
     if not server_name:
@@ -1819,7 +1818,6 @@ def mcp_sse():
 
 @app.route('/mcp/messages', methods=['POST', 'OPTIONS'], strict_slashes=False)
 @login_required
-@csrf.exempt
 def mcp_messages():
     if request.method == 'OPTIONS':
         response = Response('', status=200)
@@ -2104,7 +2102,6 @@ def refresh_tools():
 # -------------- stop and restart server ------------
 @app.route('/api/stop', methods=['POST'])
 @login_required
-@csrf.exempt
 def stop_server():
     """Shut down the Flask server."""
     # Only allow admin
@@ -2118,7 +2115,6 @@ def stop_server():
 
 @app.route('/api/restart', methods=['POST'])
 @login_required
-@csrf.exempt
 def restart_server():
     """Restart the Flask server using os.execv."""
     if current_user.id != 'saint':
@@ -2204,7 +2200,6 @@ ngrok_tunnel = None
 
 @app.route('/api/ngrok/start', methods=['POST'])
 @login_required
-@csrf.exempt
 def start_ngrok():
     global ngrok_tunnel
     if ngrok_tunnel is not None:
@@ -2217,7 +2212,6 @@ def start_ngrok():
 
 @app.route('/api/ngrok/stop', methods=['POST'])
 @login_required
-@csrf.exempt
 def stop_ngrok():
     global ngrok_tunnel
     if ngrok_tunnel is None:
@@ -2231,7 +2225,6 @@ def stop_ngrok():
 
 @app.route('/api/ngrok/status', methods=['GET'])
 @login_required
-@csrf.exempt
 def ngrok_status():
     if ngrok_tunnel:
         return jsonify({'status': 'running', 'url': ngrok_tunnel.public_url})
@@ -2325,7 +2318,6 @@ def index():
     return redirect(url_for('login') if not current_user.is_authenticated else url_for('chat'))
 
 @app.route('/login', methods=['GET', 'POST'])
-@csrf.exempt
 @limiter.limit("5 per minute")
 def login():
     if request.method == 'POST':
@@ -2604,7 +2596,6 @@ def remove_mcp_server(name):
 # ---------- API: LLM Providers ----------
 @app.route('/api/llm_providers', methods=['GET'])
 @login_required
-@csrf.exempt
 def get_llm_providers():
     return jsonify(load_llm_providers())
 
@@ -2635,7 +2626,6 @@ def add_llm_provider():
 
 @app.route('/api/llm_providers/<key>', methods=['DELETE'])
 @login_required
-@csrf.exempt
 def delete_llm_provider(key):
     if key in ['kaggle', 'ollama']:
         return jsonify({'error': 'Cannot delete built-in provider'}), 400
@@ -2648,7 +2638,6 @@ def delete_llm_provider(key):
 
 @app.route('/api/llm_providers/<key>/toggle', methods=['POST'])
 @login_required
-@csrf.exempt
 def toggle_llm_provider(key):
     providers = load_llm_providers()
     if key not in providers:
@@ -2659,7 +2648,6 @@ def toggle_llm_provider(key):
 
 @app.route('/api/llm_providers/status', methods=['POST'])
 @login_required
-@csrf.exempt
 def check_llm_status():
     data = request.json
     key = data.get('key')

@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""
-Moonshot Agent – Full Stack Web UI (Enhanced)
-Supports HTTP/SSE and stdio MCP servers, auto‑discovery of tools,
-and admin‑confirmed signup.
-"""
-
 import os
 import sys
 import json
@@ -43,8 +37,9 @@ from task_manager import task_manager, TaskStatus
 from extensions import limiter
 from collections import defaultdict
 from flask_wtf.csrf import CSRFProtect
+from models import db, User, PendingUser, Workspace, ChatMessage, SessionMemory, MemoryEntry, Task, LLMProvider, MCPServer, ScrapedData, Script
+from flask_migrate import migrate
 
-# ---------- Configuration ----------
 app = Flask(__name__)
 app.config.update(
     SECRET_KEY=os.environ.get('SECRET_KEY', os.urandom(24)),
@@ -57,17 +52,17 @@ app.config.update(
 csrf = CSRFProtect(app)
 app.config['WTF_CSRF_ENABLED'] = True
 app.config['WTF_CSRF_SECRET_KEY'] = os.environ.get('CSRF_SECRET_KEY', os.urandom(24))
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL',  'sqlite:///luna.db') 
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False 
 CORS(app, resources={r"/api/*": {"origins": "*"}, r"/mcp/*": {"origins": "*"}})
-
-# ---------- Rate Limiting ----------
 limiter = Limiter(key_func=get_remote_address, default_limits=["200 per day", "50 per hour"])
 limiter.init_app(app)
-
-# ---------- Logging ----------
+db.init_app(app)
+migrate = Migrate(app, db)
+with app.app_context():
+    db.create_all()
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
-
-# ---------- Paths ----------
 MCP_SERVERS_FILE = Path("mcp_servers.json")
 LLM_PROVIDERS_FILE = Path("llm_providers.json")
 PLAYBOOKS_DIR = Path("playbooks")
@@ -79,19 +74,15 @@ SCRIPTS_META_FILE = SCRIPTS_DIR / "scripts_meta.json"
 SCRAPED_DATA_DIR = Path("scraped_data")
 SCRAPED_META_FILE = SCRAPED_DATA_DIR / "runs_meta.json"
 USERS_DIR = Path("users")
-PENDING_USERS_FILE = Path("pending_users.json")
-USERS_FILE = Path("users.json")
 PENTEST_API_KEY = os.environ.get("PENTEST_API_KEY", "")
 TOOL_SERVER_MAP = {}
 TOOL_SERVER_LOCK = threading.Lock()
 
-# After creating the app, before any request handling:
-router = init_router("mcp_servers.json")   # initializes all servers and discovers tools
+router = init_router("mcp_servers.json")   
 app.register_blueprint(router_bp)
 
 @app.before_request
 def require_login():
-    # Skip for login, signup, static files, and health (if public)
     public_endpoints = ['login', 'signup', 'static', 'health']
     if request.endpoint and request.endpoint in public_endpoints:
         return
@@ -99,7 +90,6 @@ def require_login():
         return
     if request.path.startswith('/static'):
         return
-    # Require authentication for all other routes
     if not current_user.is_authenticated:
         return redirect(url_for('login'))
 
@@ -121,21 +111,14 @@ def discover_all_tools():
     logger.info(f"Discovered tools via router: {TOOL_SERVER_MAP}")
            
 def extract_json_object(text: str):
-    """
-    Extract the first valid JSON object from a string, handling markdown fences.
-    """
-    # Remove any markdown code fences (``` or ```json) entirely
-    text = re.sub(r'```(?:json)?\s*', '', text)   # remove opening fences
-    text = re.sub(r'```\s*', '', text)            # remove all closing fences
-    # Remove any leading/trailing whitespace
+    text = re.sub(r'```(?:json)?\s*', '', text)
+    text = re.sub(r'```\s*', '', text)         
     text = text.strip()
     
-    # Find the first '{'
     start = text.find('{')
     if start == -1:
         return None
     
-    # Find the matching '}' using a stack, respecting strings
     brace_count = 0
     in_string = False
     escape = False
@@ -159,42 +142,20 @@ def extract_json_object(text: str):
                     end = i
                     break
     if brace_count != 0:
-        return None  # unbalanced braces
+        return None  
     
     candidate = text[start:end+1]
     
-    # Try to parse as JSON
     try:
         return json.loads(candidate)
     except json.JSONDecodeError:
-        # Fix common issues: single quotes, trailing commas
         candidate = candidate.replace("'", '"')
         candidate = re.sub(r',(\s*[}\]])', r'\1', candidate)
         try:
             return json.loads(candidate)
         except:
             return None
-            
-# ---------- Authentication ----------
-class User(UserMixin):
-    def __init__(self, username):
-        self.id = username
-'''       
-class ToolRateLimiter:
-    def __init__(self):
-        self.records = defaultdict(list)  # key: (user, tool), value: list of timestamps
 
-    def is_allowed(self, user, tool, max_calls, period_seconds):
-        key = (user, tool)
-        now = time.time()
-        self.records[key] = [ts for ts in self.records[key] if ts > now - period_seconds]
-        if len(self.records[key]) >= max_calls:
-            return False
-        self.records[key].append(now)
-        return True
-
-tool_rate_limiter = ToolRateLimiter()
-'''
 def hash_password(password):
     salt = bcrypt.gensalt()
     return bcrypt.hashpw(password.encode(), salt).decode()
@@ -205,166 +166,116 @@ def verify_password(stored, provided):
     except ValueError:
         return False
 
-def load_users():
-    if not USERS_FILE.exists():
-        admin_pw = os.environ.get('ADMIN_PASSWORD')
-        if not admin_pw:
-            admin_pw = secrets.token_urlsafe(16)
-            logger.info(f"*** Generated admin password: {admin_pw} ***")
-            print(f"*** Admin password generated: {admin_pw} ***")
-        default = {"saint": hash_password(admin_pw)}
-        with open(USERS_FILE, "w") as f:
-            json.dump(default, f)
-        return default
-    with open(USERS_FILE) as f:
-        return json.load(f)
-
-def load_pending_users():
-    if not PENDING_USERS_FILE.exists():
-        return {}
-    with open(PENDING_USERS_FILE) as f:
-        return json.load(f)
-
-def save_pending_users(data):
-    with open(PENDING_USERS_FILE, "w") as f:
-        json.dump(data, f, indent=2)
-
-users_db = load_users()
 login_manager = LoginManager()
 login_manager.login_view = 'login'
 login_manager.init_app(app)
 
 @login_manager.user_loader
 def load_user(user_id):
-    if user_id in users_db:
-        return User(user_id)
-    return None
-
-# ---------- Workspace functions (unchanged) ----------
-def get_user_dir(username):
-    user_dir = USERS_DIR / username
-    user_dir.mkdir(exist_ok=True)
-    return user_dir
-
-def get_user_workspaces_dir(username):
-    workspace_dir = get_user_dir(username) / "workspaces"
-    workspace_dir.mkdir(exist_ok=True)
-    return workspace_dir
-
-def get_workspace_dir(username, workspace_id):
-    return get_user_workspaces_dir(username) / workspace_id
-
-def get_workspace_chat_file(username, workspace_id):
-    return get_workspace_dir(username, workspace_id) / "chat_history.json"
+    return User.query.get(int(user_id))
 
 def load_chat_history(username, workspace_id):
-    filepath = get_workspace_chat_file(username, workspace_id)
-    if filepath.exists():
-        with open(filepath) as f:
-            return json.load(f)
-    return []
+    user = User.query.filter_by(username=username).first()
+    workspace = Workspace.query.filter_by(user_id=user.id, workspace_id=workspace_id).first()
+    if not workspace:
+        return []
+    messages = ChatMessage.query.filter_by(workspace_id=workspace.id).order_by(ChatMessage.timestamp.asc()).all()
+    return [{'role': msg.role, 'content': msg.content} for msg in messages]
+
 
 def save_chat_history(username, workspace_id, history):
-    filepath = get_workspace_chat_file(username, workspace_id)
-    safe_join(get_workspace_dir(username, workspace_id).mkdir(exist_ok=True))
-    with open(filepath, "w") as f:
-        json.dump(history, f)
+    user = User.query.filter_by(username=username).first()
+    workspace = get_or_create_workspace(username, workspace_id)
+    ChatMessage.query.filter_by(workspace_id=workspace.id).delete()
+    for entry in history:
+        msg = ChatMessage(workspace_id=workspace.id, user_id=user.id, role=entry['role'], content=entry['content'])
+        db.session.add(msg)
+    db.session.commit()
 
 def delete_chat_history(username, workspace_id):
-    filepath = get_workspace_chat_file(username, workspace_id)
-    if filepath.exists():
-        filepath.unlink()
-    mem_file = safe_join(get_workspace_dir(username, workspace_id) / "session_memory.json")
-    if mem_file.exists():
-        mem_file.unlink()
-    save_chat_history(username, workspace_id, [])
+    user = User.query.filter_by(username=username).first()
+    workspace = Workspace.query.filter_by(user_id=user.id, workspace_id=workspace_id).first()
+    if workspace:
+        ChatMessage.query.filter_by(workspace_id=workspace.id).delete()
+        SessionMemory.query.filter_by(workspace_id=workspace.id).delete()
+        MemoryEntry.query.filter_by(workspace_id=workspace.id).delete()
+        db.session.commit()
 
 def get_workspace_session_memory(username, workspace_id):
-    mem_file = safe_join(get_workspace_dir(username, workspace_id) / "session_memory.json")
-    if mem_file.exists():
-        with open(mem_file) as f:
-            return json.load(f)
-    return {"executed_commands": [], "current_phase": "reconnaissance"}
+    user = User.query.filter_by(username=username).first()
+    workspace = Workspace.query.filter_by(user_id=user.id, workspace_id=workspace_id).first()
+    if not workspace:
+        return {"executed_commands": [], "current_phase": "reconnaissance"}
+    memory = SessionMemory.query.filter_by(workspace_id=workspace.id).first()
+    if not memory:
+        return {"executed_commands": [], "current_phase": "reconnaissance"}
+    return {
+        "executed_commands": memory.get_commands(),
+        "current_phase": memory.current_phase
+    }
 
 def save_workspace_session_memory(username, workspace_id, memory):
-    mem_file = safe_join(get_workspace_dir(username, workspace_id) / "session_memory.json")
-    safe_join(get_workspace_dir(username, workspace_id).mkdir(exist_ok=True))
-    with open(mem_file, "w") as f:
-        json.dump(memory, f)
+    user = User.query.filter_by(username=username).first()
+    workspace = get_or_create_workspace(username, workspace_id)
+    session_mem = SessionMemory.query.filter_by(workspace_id=workspace.id).first()
+    if not session_mem:
+        session_mem = SessionMemory(workspace_id=workspace.id)
+    session_mem.set_commands(memory.get('executed_commands', []))
+    session_mem.current_phase = memory.get('current_phase', 'reconnaissance')
+    db.session.add(session_mem)
+    db.session.commit()
 
 def list_workspaces(username):
-    workspace_dir = get_user_workspaces_dir(username)
-    workspaces = []
-    for d in workspace_dir.iterdir():
-        if d.is_dir():
-            meta_file = d / "meta.json"
-            name = d.name
-            if meta_file.exists():
-                try:
-                    meta = json.loads(meta_file.read_text())
-                    name = meta.get("name", d.name)
-                except Exception:
-                    pass
-            workspaces.append({"id": d.name, "name": name})
-    return workspaces
-    
-# ---------- Workspace Memory ----------
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return []
+    workspaces = Workspace.query.filter_by(user_id=user.id).all()
+    return [{"id": ws.workspace_id, "name": ws.name} for ws in workspaces]
+
 def get_workspace_memory_file(username, workspace_id):
     return get_workspace_dir(username, workspace_id) / "memory.json"
 
 def load_workspace_memory(username, workspace_id, limit=50):
-    """Return a list of memory entries (most recent first)."""
-    mem_file = get_workspace_memory_file(username, workspace_id)
-    if not mem_file.exists():
+    user = User.query.filter_by(username=username).first()
+    if not user:
         return []
-    try:
-        data = json.loads(mem_file.read_text())
-        # Ensure it's a list
-        if not isinstance(data, list):
-            return []
-        # sort by timestamp descending (most recent first)
-        data.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
-        return data[:limit]
-    except (json.JSONDecodeError, OSError):
+    workspace = Workspace.query.filter_by(user_id=user.id, workspace_id=workspace_id).first()
+    if not workspace:
         return []
+    entries = MemoryEntry.query.filter_by(workspace_id=workspace.id).order_by(MemoryEntry.timestamp.desc()).limit(limit).all()
+    return [
+        {
+            "timestamp": e.timestamp.isoformat(),
+            "tool": e.tool,
+            "args": json.loads(e.args) if e.args else {},
+            "result": e.result[:2000]
+        }
+        for e in entries
+    ]
 
 def append_workspace_memory(username, workspace_id, tool, args, result, user_query=None):
-    """Append a structured entry to memory, and add to vector store if embedder available."""
-    mem_file = get_workspace_memory_file(username, workspace_id)
-    entries = []
-    if mem_file.exists():
-        try:
-            entries = json.loads(mem_file.read_text())
-            if not isinstance(entries, list):
-                entries = []
-        except:
-            entries = []
-    entry = {
-        "timestamp": datetime.now().isoformat(),
-        "tool": tool,
-        "args": args,
-        "result": result[:2000]
-    }
-    entries.append(entry)
-    if len(entries) > 100:
-        entries = entries[-100:]
-    mem_file.write_text(json.dumps(entries, indent=2))
-
-    # --- Vector Store ---
+    user = User.query.filter_by(username=username).first()
+    workspace = get_or_create_workspace(username, workspace_id)
+    entry = MemoryEntry(
+        workspace_id=workspace.id,
+        tool=tool,
+        args=json.dumps(args),
+        result=result[:2000],
+        user_query=user_query
+    )
+    db.session.add(entry)
+    db.session.commit()
+    
     if EMBEDDER_AVAILABLE:
-        # Create a searchable text: tool + args + result
         text_to_embed = f"Tool: {tool}\nArgs: {json.dumps(args)}\nResult: {result[:500]}"
-        # Generate ID based on timestamp and tool
         entry_id = f"{username}_{workspace_id}_{datetime.now().timestamp()}"
         embedding = embedder.encode([text_to_embed]).tolist()[0]
-        # Include username and workspace as metadata for filtering
         metadata = {
             "username": username,
             "workspace": workspace_id,
             "tool": tool,
             "timestamp": entry["timestamp"]
         }
-        # We'll store the full result in the document field for retrieval
         memory_collection.add(
             ids=[entry_id],
             embeddings=[embedding],
@@ -381,7 +292,6 @@ def retrieve_similar_memories(query, username, workspace_id, n_results=3):
         results = memory_collection.query(
             query_embeddings=[query_embedding],
             n_results=n_results,
-            # Filter by workspace and username to avoid cross-contamination
             where={"$and": [{"workspace": workspace_id}, {"username": username}]}
         )
         if results['documents'] and results['documents'][0]:
@@ -392,11 +302,8 @@ def retrieve_similar_memories(query, username, workspace_id, n_results=3):
         return []
                
 def summarize_conversation(messages, provider="kaggle", model="llama3.1:8b"):
-    """Summarize a list of messages into a compact paragraph."""
     if not messages:
-        return ""
-    
-    # Build a prompt for summarization
+        return ""    
     conversation_text = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
     prompt = f"""Summarize the following conversation between a user and an AI penetration testing assistant.
 Focus on: what the user asked, what tools were run, and what key findings were discovered.
@@ -415,14 +322,11 @@ Summary:"""
     return summary.strip()
 
 def resume_pending_tasks():
-    """Check for any tasks that were running before restart and resume them."""
     for task_id, task in list(task_manager.tasks.items()):
         status = task.get('status')
         if status in (TaskStatus.PENDING, TaskStatus.RUNNING, TaskStatus.PENDING_CONFIRMATION):
             logger.info(f"Resuming task {task_id} (status: {status.value})")
-            # Reconstruct the arguments for run_llm_loop
             def resume_work(tid=task_id):
-                # Re-run the loop with the saved state
                 run_llm_loop(
                     tid,
                     task['provider'],
@@ -435,7 +339,6 @@ def resume_pending_tasks():
                 )
             task_manager.submit_task(task_id, resume_work)
 
-# ---------- RAG ----------
 chroma_client = chromadb.PersistentClient(path=str(VECTOR_STORE_DIR))
 collection = chroma_client.get_or_create_collection("knowledge")
 memory_collection = chroma_client.get_or_create_collection("workspace_memory")
@@ -467,7 +370,6 @@ def extract_text_from_file(filepath):
         return df.to_string()
     return ""
 
-# ---------- Sandbox (enhanced) ----------
 DANGEROUS_MODULES = {'os', 'subprocess', 'socket', 'shutil', 'sys', 'requests', 'urllib', 'ftplib', 'telnetlib', 'pickle', 'marshal'}
 
 def is_code_dangerous(code):
@@ -531,19 +433,13 @@ def run_script_safe(code, args=None, timeout=30, env_vars=None):
             return {'stdout': '', 'stderr': f'Script timed out after {timeout}s', 'returncode': -1, 'timeout': True}
         except Exception as e:
             return {'stdout': '', 'stderr': str(e), 'returncode': -1, 'timeout': False}
-
         
-# ===========================================
-#             HELPERS
-# ===========================================
 def is_admin():
     return current_user.is_authenticated and current_user.id == 'saint'
     
 def safe_join(base_dir: Path, subpath: str) -> Path:
-    """Join base_dir and subpath, ensuring the result is inside base_dir."""
     base = base_dir.resolve()
     target = (base / subpath).resolve()
-    # Normalize to prevent e.g., /etc/passwd
     if not str(target).startswith(str(base)):
         abort(403, description="Access denied: invalid path.")
     return target
@@ -561,20 +457,16 @@ def save_scraped_meta(meta):
     with open(SCRAPED_META_FILE, "w") as f:
         json.dump(meta, f, indent=2)
 def count_tokens(text, model="gpt-3.5-turbo"):
-    """Return an approximate token count, falling back to len/4 on errors."""
     try:
         try:
             encoding = tiktoken.encoding_for_model(model)
         except KeyError:
-            # Fallback to cl100k_base, but catch download errors
             try:
                 encoding = tiktoken.get_encoding("cl100k_base")
             except Exception:
-                # If download fails, use a rough estimate
-                return len(text) // 4  # ~4 chars per token
+                return len(text) // 4  
         return len(encoding.encode(text))
     except Exception:
-        # Any other failure (SSL, network, etc.) -> rough estimate
         return len(text) // 4
 def get_mcp_servers():
     if not MCP_SERVERS_FILE.exists():
@@ -653,7 +545,6 @@ def call_llm(provider, model, messages, workspace_id=None):
             logger.error(f"Ollama error: {e}")
             return None
     else:
-        # Kaggle or custom OpenAI provider
         providers = load_llm_providers()
         if provider not in providers:
             logger.error(f"Provider '{provider}' not found in config")
@@ -669,29 +560,26 @@ def call_llm(provider, model, messages, workspace_id=None):
             logger.error("Provider URL not set")
             return None
         
-        # Use the new /v1/chat/completions endpoint
         target = f"{url}/v1/chat/completions"
         headers = {
             'Content-Type': 'application/json',
             'X-API-Key': api_key
         }
         
-        # Prepare payload with session_id (workspace) and messages
         payload = {
-            "session_id": workspace_id or "default",  # use workspace ID as session
-            "message": messages[-1]['content'] if messages else "",  # the latest user message
+            "session_id": workspace_id or "default",  
+            "message": messages[-1]['content'] if messages else "",  
             "model": model,
-            "messages": messages,   # include full history so server can use it directly
+            "messages": messages,   
             "max_tokens": 1024,
             "temperature": 0.7,
-            "use_rag": False       # we'll allow the frontend to enable this via a checkbox
+            "use_rag": False       
         }
         
         try:
             resp = requests.post(target, json=payload, headers=headers, timeout=12000)
             if resp.status_code == 200:
                 result = resp.json()
-                # Extract assistant message from response
                 assistant_content = result.get('choices', [{}])[0].get('message', {}).get('content', '')
                 return assistant_content
             else:
@@ -700,21 +588,7 @@ def call_llm(provider, model, messages, workspace_id=None):
         except Exception as e:
             logger.error(f"Kaggle request failed: {e}")
             return None
-'''       else:
-            # fallback to Ollama
-            ollama_url = 'http://localhost:11434/api/chat'
-            payload = {'model': 'llama3.1:8b', 'messages': messages, 'stream': False}
-            try:
-                resp = requests.post(ollama_url, json=payload, timeout=12000)
-                if resp.ok:
-                    result = resp.json()
-                    return result.get('message', {}).get('content', '')
-                else:
-                    return None
-            except Exception as e:
-                logger.error(f"Fallback Ollama error: {e}")
-                return None
-'''
+
 def run_llm_loop(task_id, provider, model, messages, mode, workspace, target, use_rag=False):
     task_manager.update_task(task_id, status=TaskStatus.RUNNING)
     
@@ -723,7 +597,6 @@ def run_llm_loop(task_id, provider, model, messages, mode, workspace, target, us
     workspace_id = task['workspace_id']
     logger.info(f"loop started ...")
 
-    # Build system prompt
     logger.info(f"trying to build prompt")
     try:
         tools_description = get_tools_description()
@@ -731,7 +604,6 @@ def run_llm_loop(task_id, provider, model, messages, mode, workspace, target, us
     except Exception:
         tools_description = "No tools available (error retrieving)."
 
-    # Build system prompt with memory injection
     base_system = """You are an autonomous penetration testing assistant.
 you have access to full conversation history, including previous tool outputs.
 if you need tool names and schema respond with {"request": "list_tools"}
@@ -755,7 +627,6 @@ If you are not sure, always output a JSON plan or tool call rather than asking f
 """
 
     logger.info(f"base memory set to: {base_system}")
-    # --- Load recent memory for this workspace ---
     memory_text = ""
     logger.info(f"loading recent memory")
     if workspace and task_id:
@@ -778,14 +649,12 @@ If you are not sure, always output a JSON plan or tool call rather than asking f
             if results['documents'][0]:
                 rag_context = "\nRelevant knowledge:\n" + "\n".join(results['documents'][0])
 
-    # --- Vector Memory: retrieve similar past actions ---
     vector_memory_text = ""
     logger.info(f"Vector memory")
     if workspace and task_id and EMBEDDER_AVAILABLE:
         task = task_manager.get_task(task_id)
         if task:
             username = task['user_id']
-            # Use the last user message as the query
             last_user_msg = next((m['content'] for m in reversed(messages) if m['role'] == 'user'), '')
             if last_user_msg:
                 similar = retrieve_similar_memories(last_user_msg, username, workspace, n_results=2)
@@ -803,15 +672,13 @@ If you are not sure, always output a JSON plan or tool call rather than asking f
         logger.warning("Approaching token limit - consider compressing history.")
 
     estimated_tokens = sum(len(m.get('content', '')) / 4 for m in full_messages)
-    if estimated_tokens > 3000:  # safe limit
-        # Keep the system prompt and the last 2 user/assistant turns
+    if estimated_tokens > 3000:  
         system_messages = [m for m in full_messages if m['role'] == 'system']
-        recent_messages = full_messages[-4:]  # last 4 messages
+        recent_messages = full_messages[-4:]  
         old_messages = full_messages[len(system_messages):-4]
         if old_messages:
             logger.info(f"Compressing {len(old_messages)} old messages...")
             summary_text = summarize_conversation(old_messages, provider, model)
-            # Replace old messages with a single "summary" message
             full_messages = system_messages + [
                 {"role": "system", "content": f"Previous conversation summary: {summary_text}"}
             ] + recent_messages
@@ -821,13 +688,11 @@ If you are not sure, always output a JSON plan or tool call rather than asking f
     iteration = 0
 
     while iteration < max_iterations:
-        # 0 cancel task
         if task_manager.is_cancelled(task_id):
             logger.info(f"Task {task_id} cancelled gracefully.")
             task_manager.update_task(task_id, status=TaskStatus.FAILED, error="Cancelled by user")
             return
             
-        # 1. Call LLM
         logger.info(f"start of iterations")
         assistant_content = call_llm(provider, model, full_messages, workspace_id=workspace)
         last_user = next((m['content'] for m in reversed(full_messages) if m['role'] == 'user'), None)
@@ -844,31 +709,23 @@ If you are not sure, always output a JSON plan or tool call rather than asking f
                 iteration += 1
                 continue
 
-        # Try to parse as a plan first
         plan_json = None
         try:
-            # Attempt to parse the entire content as JSON (after stripping markdown if any)
             cleaned = assistant_content.strip()
-            # Remove any markdown code fences
             cleaned = re.sub(r'^```(?:json)?\s*', '', cleaned)
             cleaned = re.sub(r'```\s*$', '', cleaned)
             plan_json = json.loads(cleaned)
         except json.JSONDecodeError:
-            # Fallback to the existing extractor
             plan_json = extract_json_object(assistant_content)
 
         if plan_json and isinstance(plan_json, dict) and 'plan' in plan_json:
             plan = plan_json['plan']
             if not isinstance(plan, list) or not plan:
-                # invalid plan
                 pass
             else:
-                # Store plan in task manager (we'll add a field)
                 task_manager.update_task(task_id, plan=plan, current_step=0)
-                # Send a "plan" event to frontend
                 task_manager.append_event(task_id, "plan", {"plan": plan})
                 
-                # If in assistant mode, ask for confirmation of the whole plan
                 if mode == 'assistant':
                     task_manager.update_task(
                         task_id,
@@ -882,18 +739,13 @@ If you are not sure, always output a JSON plan or tool call rather than asking f
                     if not confirmed:
                         task_manager.update_task(task_id, status=TaskStatus.FAILED, error="Plan confirmation failed")
                         return
-                    # proceed to execute
-                # else autonomous: just execute
-                step_results = []  # store outputs of each step
-                step_status = []   # store success/failure of each step
+                step_results = []  
+                step_status = []   
 
-                # Helper: replace placeholders like {prev.output} in args
                 def chain_args(args, step_index, step_results):
                     if not step_results:
                         return args
-                    # Get the output of the previous step (or last successful step)
                     last_output = step_results[-1] if step_results else ""
-                    # Simple placeholder replacement
                     new_args = {}
                     for key, value in args.items():
                         if isinstance(value, str) and "{prev.output}" in value:
@@ -904,7 +756,6 @@ If you are not sure, always output a JSON plan or tool call rather than asking f
                             new_args[key] = value
                     return new_args
 
-                # Execute each step sequentially
                 task = task_manager.get_task(task_id)
                 step = task.get('current_step', 0)
                 while step < len(plan):
@@ -912,16 +763,13 @@ If you are not sure, always output a JSON plan or tool call rather than asking f
                     tool_name = step_item['tool']
                     args = step_item['args']
 
-                    # --- Conditional Execution: skip if previous step failed 
                     if step > 0 and not step_status[-1]:
                         task_manager.append_event(task_id, "thinking", {"message": f"Skipping {tool_name} because previous step failed."})
                         step += 1
                         continue
 
-                    # --- Tool Chaining: inject previous output ---
                     chained_args = chain_args(args, step, step_results)
                 
-                    # Inject target if missing
                     if target:
                         for key in ['target', 'host', 'url']:
                             if key not in chained_args:
@@ -929,7 +777,6 @@ If you are not sure, always output a JSON plan or tool call rather than asking f
 
                     task_manager.append_event(task_id, "tool_call", {"tool": tool_name, "args": chained_args})
 
-                    # --- Auto‑Retry logic (max 2 attempts) ---
                     max_retries = 2
                     attempt = 0
                     success = False
@@ -938,40 +785,30 @@ If you are not sure, always output a JSON plan or tool call rather than asking f
                     while attempt < max_retries and not success:
                         attempt += 1
                         try:
-                            # If this is a retry, adjust args (e.g., lower timeout, change scan_type)
                             if attempt > 1:
                                 task_manager.append_event(task_id, "thinking", {"message": f"Retrying {tool_name} (attempt {attempt})..."})
-                                # Simple fallback: if nmap scan_type was -T4, try -T3
                                 if tool_name == "nmap" and chained_args.get("scan_type") == "-T4 -sV":
                                     chained_args["scan_type"] = "-T3 -sV"
-                                # If gobuster, add a delay
                                 if tool_name == "gobuster" and "delay" not in chained_args:
                                     chained_args["delay"] = "500ms"
             
                             user_id = task['user_id']
-                            # Get last user query for vector memory
                             last_user = next((m['content'] for m in reversed(full_messages) if m['role'] == 'user'), None)
                             tool_result = execute_tool(tool_name, chained_args, workspace, user_id, user_query=last_user)
             
-                            # Check if tool result indicates success (no "Error:" prefix)
                             if not tool_result.startswith("Error:"):
                                 success = True
                                 step_results.append(tool_result)
                                 step_status.append(True)
                                 task_manager.append_event(task_id, "tool_result", {"output": tool_result})
-                                # Store in conversation
                                 full_messages.append({"role": "assistant", "content": f"Step {step+1}: {tool_name} ran successfully."})
                                 full_messages.append({"role": "user", "content": f"Tool {tool_name} returned:\n{tool_result}"})
                             else:
-                                # Failure
                                 if attempt == max_retries:
-                                    # Final failure – log it and continue to next step
                                     step_results.append(f"FAILED: {tool_result}")
                                     step_status.append(False)
                                     task_manager.append_event(task_id, "tool_result", {"output": f"Failed after {max_retries} attempts: {tool_result}"})
-                                    # Don't stop the whole plan – just mark as failed and move on
                                 else:
-                                    # Wait a bit before retrying
                                     time.sleep(2)
                         except Exception as e:
                             logger.error(f"Tool execution error: {e}")
@@ -991,30 +828,24 @@ If you are not sure, always output a JSON plan or tool call rather than asking f
                 # For simplicity, we'll just finish and return a final message.
                 final_summary = f"Completed {len(plan)} steps. Check the results above."
                 task_manager.append_event(task_id, "final", {"content": final_summary})
-                # Save to chat
                 history = load_chat_history(username, workspace_id)
                 history.append({"role": "assistant", "content": final_summary})
                 save_chat_history(username, workspace_id, history)
                 task_manager.update_task(task_id, status=TaskStatus.COMPLETED, result=final_summary)
                 return
         
-        # 2. Try to parse tool call
         tool_call = extract_json_object(assistant_content)
         if tool_call and isinstance(tool_call, dict) and 'tool' in tool_call and 'args' in tool_call:
             tool_name = tool_call['tool']
             args = tool_call['args']
-            # Inject target if missing
             if target:
                 for key in ['target', 'host', 'url']:
                     if key not in args:
                         args[key] = target
 
-            # Store the tool call event (so the frontend can show it)
             task_manager.append_event(task_id, "tool_call", {"tool": tool_name, "args": args})
 
             if mode == 'assistant':
-                # ---- Assistant mode: ask for confirmation ----
-                # Save current state so we can resume
                 task_manager.update_task(
                     task_id,
                     status=TaskStatus.PENDING_CONFIRMATION,
@@ -1022,10 +853,8 @@ If you are not sure, always output a JSON plan or tool call rather than asking f
                     full_messages=full_messages.copy(),
                     iteration=iteration
                 )
-                # Store the proposal event for the UI
                 task_manager.append_event(task_id, "tool_proposal", {"tool": tool_name, "args": args})
 
-                # Wait for confirmation (timeout = 5 minutes)
                 confirmed = task_manager.wait_for_confirmation(task_id, timeout=300)
                 if not confirmed:
                     task_manager.update_task(
@@ -1035,32 +864,25 @@ If you are not sure, always output a JSON plan or tool call rather than asking f
                     )
                     return
 
-                # Resume: execute the tool
-                # Retrieve updated state
                 task = task_manager.get_task(task_id)
                 if not task or task['status'] == TaskStatus.FAILED:
                     return
 
                 task_manager.append_event(task_id, "thinking", {"message": f"Preparing to run {tool_name}..."})
                 
-                # Execute tool with the confirmed args
                 user_id = task['user_id']
-                # Get the last user message from full_messages
                 last_user = next((m['content'] for m in reversed(full_messages) if m['role'] == 'user'), None)
                 tool_result = execute_tool(tool_name, args, workspace, user_id, user_query=last_user)
                 task_manager.append_event(task_id, "tool_result", {"output": tool_result})
 
-                # Add to conversation
                 full_messages = task['full_messages']  # restored
                 full_messages.append({"role": "assistant", "content": assistant_content})
                 full_messages.append({"role": "user", "content": f"Tool {tool_name} returned:\n{tool_result}"})
                 iteration = task['iteration'] + 1
-                # Reset confirmation state
                 task_manager.update_task(task_id, status=TaskStatus.RUNNING, confirmed=False)
                 continue  # next iteration
 
             else:
-                # ---- Autonomous mode: execute directly ----
                 user_id = task_manager.get_task(task_id)['user_id']
                 task_manager.append_event(task_id, "thinking", {"message": f"Preparing to run {tool_name}..."})
                 tool_result = execute_tool(tool_name, args, workspace, user_id)
@@ -1070,25 +892,18 @@ If you are not sure, always output a JSON plan or tool call rather than asking f
                 iteration += 1
                 continue
 
-        # No tool call – final answer
         task_manager.append_event(task_id, "final", {"content": assistant_content})
-        # Save to chat history
         task = task_manager.get_task(task_id)
         if task:
-            username = task['user_id']  # user_id is actually username in our system
+            username = task['user_id']  
             workspace_id = task['workspace_id']
-            # Append assistant message to chat history
             history = load_chat_history(username, workspace_id)
             history.append({"role": "assistant", "content": assistant_content})
             save_chat_history(username, workspace_id, history)
         task_manager.update_task(task_id, status=TaskStatus.COMPLETED, result=assistant_content)
         return
 
-    # Max iterations reached
     task_manager.update_task(task_id, status=TaskStatus.FAILED, error="Max iterations reached")                
-# =============================================================================
-# MCP SUPPORT – HTTP/SSE and stdio
-# =============================================================================
 
 class StdioMCPSession:
     """Manages a subprocess MCP server over stdio."""
@@ -1101,7 +916,7 @@ class StdioMCPSession:
         self.response_queues = {}
         self.reader_thread = None
         self.running = False
-        self.tools_cache = None  # list of tool names after discovery
+        self.tools_cache = None  
 
     def start(self):
         if self.proc and self.proc.poll() is None:
@@ -1131,7 +946,6 @@ class StdioMCPSession:
         return self.initialize()   
          
     def initialize(self):
-        # Send initialize
         init_req = {
             "jsonrpc": "2.0",
             "id": "init-1",
@@ -1146,7 +960,6 @@ class StdioMCPSession:
         if resp is None:
             logger.error("Initialize request failed")
             return False
-        # Send initialized notification (no response expected)
         notif = {
             "jsonrpc": "2.0",
             "method": "initialized",
@@ -1171,7 +984,6 @@ class StdioMCPSession:
                 logger.warning(f"Non-JSON line from stdio: {line.strip()}")
 
     def send_request(self, request_id, method, params):
-        """Send a JSON-RPC request and return the response (blocking)."""
         with self.lock:
             if not self.proc or self.proc.poll() is not None:
                 if not self.start():
@@ -1211,309 +1023,16 @@ class StdioMCPSession:
     def is_alive(self):
         return self.proc is not None and self.proc.poll() is None
 
-'''
 class MCPSessionManager:
     def __init__(self):
-        self.sessions = {}  # server_name -> session info
+        self.sessions = {}  
         self.lock = threading.Lock()
 
-    def start_session(self, server_name, server_config):
-        """Start a session for the given server (HTTP or stdio) and return session info."""
-        with self.lock:
-            if server_name in self.sessions:
-                existing = self.sessions[server_name]
-                if existing['type'] == 'http':
-                    if 'sse_thread' in existing and not existing['sse_thread'].is_alive():
-                        logger.info(f"SSE thread dead, restarting session for {server_name}")
-                        # remove and restart
-                        del self.sessions[server_name]
-                        return self.start_session(server_name, server_config)  # restart fresh
-                elif existing['type'] == 'stdio':
-                    if not existing['stdio_session'].is_alive():
-                        logger.info(f"stdio session dead, restarting for {server_name}")
-                        existing['stdio_session'].start()
-                return existing
-
-            server_type = server_config.get('type', 'http')
-            if server_type == 'http':
-                url = server_config.get('url')
-                if not url:
-                    raise ValueError("HTTP server missing url")
-                # SSE-based session – connect and get session ID
-                q = queue.Queue()
-                session_id = None
-                stop_event = threading.Event()
-
-                def sse_worker():
-                    nonlocal session_id
-                    while not stop_event.is_set():
-                        try:
-                            response = requests.get(f"{url}/sse", stream=True, timeout=3000)
-                            if response.status_code != 200:
-                                logger.error(f"SSE endpoint returned {response.status_code} for {server_name}")
-                                time.sleep(5)
-                                continue
-                            logger.info(f"sse connection established for {server_name}, reading lines ....")    
-                            # now read the stream
-                            for line in response.iter_lines(decode_unicode=True):
-                                if stop_event.is_set():
-                                    break
-                                if not line:
-                                    continue    
-                                logger.debug(f"SSE line: {line}")
-                                if line.startswith('data: '):
-                                    data_content = line[6:].strip()
-                                    if '?session_id=' in data_content:
-                                        parts = data_content.split('?session_id=') 
-                                        logger.debug(f"Found Session_id in data: {data_content}")
-                                        if len(parts) > 1:
-                                            session_id = parts[1].split(' ')[0].split('&')[0]
-                                            logger.info(f"✅ Captured session_id: {session_id}")
-                                            q.put(session_id)
-                                            #return  # success, exit thread
-                                    try:
-                                        msg = json.loads(data_content)
-                                        if 'id' in msg:
-                                            req_id = msg['id']
-                                            # Find the session's response queue
-                                            with self.lock:
-                                                session_info = self.sessions.get(server_name)
-                                                if session_info and req_id in session_info.get('response_queues', {}):
-                                                    session_info['response_queues'][req_id].put(msg)
-                                    except json.JSONDecodeError:
-                                        pass                
-                                                    
-                        except requests.exceptions.RequestException as e:
-                            logger.error(f"SSE connection error for {server_name}: {e}")
-                            time.sleep(5)
-                        except Exception as e:
-                            logger.error(f"unexpected error in sse worker for {server_name}: {e}")
-                            time.sleep(5)
-                             
-                thread = threading.Thread(target=sse_worker, daemon=True)
-                thread.start()
-                try:
-                    session_id = q.get(timeout=100)
-                    logger.info(f"Got session ID: {session_id}, now initialzing........")
-                    # ---- MCP Initialization ----
-                    init_req_id = str(uuid.uuid4())
-                    init_response = self.send_http_request(server_name, init_req_id, "initialize", {
-                        "protocolVersion": "2025-03-26",
-                        "clientInfo": {"name": "moonshot-agent", "version": "1.0"},
-                        "capabilities": {}
-                    })
-                    if init_response is None or 'error' in init_response:
-                        raise RuntimeError("Initialize failed")
-                    # Send initialized notification (no response needed)
-                    notif_payload = {"jsonrpc": "2.0", "method": "initialized", "params": {}}
-                    requests.post(messages_url, json=notif_payload, timeout=5)
-                    messages_url = f"{url}/messages/?session_id={session_id}"
-                    try:
-                        init_resp = requests.post(messages_url, json=init_payload, timeout=300)
-                        logger.info(f"Sending initialize to {messages_url}")
-                        if init_resp.status_code != 200:
-                            logger.error(f"Initialize failed: {init_resp.status_code} {init_resp.text}")
-                            raise RuntimeError("Initialize failed")
-                        # Send initialized notification (no response expected)
-                        notif_payload = {
-                            "jsonrpc": "2.0",
-                            "method": "initialized",
-                            "params": {}
-                        }
-                        requests.post(messages_url, json=notif_payload, timeout=5)
-                        logger.info(f"MCP initialization completed for {server_name}")
-                    except Exception as e:
-                        logger.error(f"Init error: {e}")
-                        raise RuntimeError(f"Initialize failed: {e}")
- 
-                except queue.Empty:
-                    raise RuntimeError(f"Failed to get session ID for {server_name}")
-                session_info = {
-                    'type': 'http',
-                    'url': url,
-                    'session_id': session_id,
-                    'sse_thread': thread,
-                    'stop_event': stop_event,
-                    'tools_cache': None,
-                    'response_queues': {}
-                }
-                self.sessions[server_name] = session_info
-                logger.info(f"HTTP session started for {server_name} with ID {session_id}")
-                return session_info
-
-            elif server_type == 'stdio':
-                command = server_config.get('command')
-                if not command:
-                    raise ValueError("stdio server missing command")
-                env = server_config.get('env', {})
-                cwd = server_config.get('cwd')
-                stdio_session = StdioMCPSession(command, env=env, cwd=cwd)
-                if not stdio_session.start():
-                    raise RuntimeError(f"Failed to start stdio server {server_name}")
-                session_info = {
-                    'type': 'stdio',
-                    'stdio_session': stdio_session,
-                    'tools_cache': None
-                }
-                self.sessions[server_name] = session_info
-                logger.info(f"stdio session started for {server_name}")
-                return session_info
-            else:
-                raise ValueError(f"Unknown server type: {server_type}")
-
-    def stop_session(self, server_name):
-        with self.lock:
-            session = self.sessions.get(server_name)
-            if not session:
-                return False
-            if session['type'] == 'http':
-                if 'stop_event' in session:
-                    session['stop_event'].set()
-                del self.sessions[server_name]
-                logger.info(f"HTTP session stopped for {server_name}")
-            elif session['type'] == 'stdio':
-                session['stdio_session'].stop()
-                del self.sessions[server_name]
-                logger.info(f"stdio session stopped for {server_name}")
-            return True
-
-    def get_session(self, server_name):
-        with self.lock:
-            return self.sessions.get(server_name)
-
-    def discover_tools(self, server_name):
-        """Call tools/list and cache the result in the session."""
-        session = self.get_session(server_name)
-        if not session:
-            return None
-        if session.get('tools_cache') is not None:
-            return session['tools_cache']
-        logger.info(f"Sending initialize to {messages_url}")
-        
-        # Send tools/list request
-        if session['type'] == 'http':
-            # Use existing session_id and url
-            url = session['url']
-            session_id = session['session_id']
-            req_id = str(uuid.uuid4())
-            response = self.send_http_request(server_name, req_id, "tools/list", {})
-            if response and 'result' in response:
-                tools = response['result'].get('tools', [])
-                tool_names = [t.get('name') for t in tools if t.get('name')]
-                session['tools_cache'] = tool_names
-                return tool_names
-            messages_url = f"{url}/messages/?session_id={session_id}"
-            try:
-                resp = requests.post(messages_url, json=payload, timeout=30)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    tools = data.get('result', {}).get('tools', [])
-                    tool_names = [t.get('name') for t in tools if t.get('name')]
-                    session['tools_cache'] = tool_names
-                    return tool_names
-            except Exception as e:
-                logger.error(f"Failed to discover tools for HTTP {server_name}: {e}")
-                return None
-        elif session['type'] == 'stdio':
-            stdio = session['stdio_session']
-            req_id = str(uuid.uuid4())
-            response = stdio.send_request(req_id, "tools/list", {})
-            if response:
-                tools = response.get('result', {}).get('tools', [])
-                tool_names = [t.get('name') for t in tools if t.get('name')]
-                session['tools_cache'] = tool_names
-                return tool_names
-        return None
-
     def send_http_request(self, server_name, request_id, method, params):
-        """Send a JSON-RPC request via HTTP and wait for the response on the SSE queue."""
         session = self.get_session(server_name)
         if not session or session['type'] != 'http':
             return None
 
-        # Ensure response_queues exists
-        if 'response_queues' not in session:
-            session['response_queues'] = {}
-        q = queue.Queue()
-        session['response_queues'][request_id] = q
-
-        try:
-            url = session['url']
-            session_id = session['session_id']
-            messages_url = f"{url}/messages/?session_id={session_id}"
-
-            payload = {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "method": method,
-                "params": params
-            }
-            resp = requests.post(messages_url, json=payload, timeout=30)
-            if resp.status_code not in (200, 202):
-                logger.error(f"HTTP request failed: {resp.status_code} {resp.text}")
-                return None
-
-            # Wait for response on SSE queue
-            try:
-                response = q.get(timeout=60)
-                return response
-            except queue.Empty:
-                logger.error(f"Timeout waiting for response to {method}")
-                return None
-        finally:
-            # Clean up the queue
-            session['response_queues'].pop(request_id, None)
-
-    def send_tool_call(self, server_name, tool_name, arguments):
-        session = self.get_session(server_name)
-        if not session:
-            return None
-        if session['type'] == 'http':
-            url = session['url']
-            session_id = session['session_id']
-            req_id = str(uuid.uuid4())
-            response = self.send_http_request(server_name, req_id, "tools/call", {"name": tool_name, "arguments": arguments})
-            if response and 'result' in response:
-                return response['result']
-            messages_url = f"{url}/messages/?session_id={session_id}"
-            try:
-                resp = requests.post(messages_url, json=payload, timeout=60)
-                return resp
-            except Exception as e:
-                logger.error(f"HTTP tool call failed: {e}")
-                return None
-        elif session['type'] == 'stdio':
-            stdio = session['stdio_session']
-            req_id = str(uuid.uuid4())
-            response = stdio.send_request(req_id, "tools/call", {"name": tool_name, "arguments": arguments})
-            if response is None:
-                return None
-            # Wrap as a Response-like object
-            class StdioResponse:
-                def __init__(self, json_data):
-                    self._json = json_data
-                    self.status_code = 200
-                    self.headers = {'content-type': 'application/json'}
-                    self.content = json.dumps(json_data)
-                    self.text = self.content
-                def json(self):
-                    return self._json
-            return StdioResponse(response)
-        else:
-            return None
-'''
-class MCPSessionManager:
-    def __init__(self):
-        self.sessions = {}  # server_name -> session info
-        self.lock = threading.Lock()
-
-    def send_http_request(self, server_name, request_id, method, params):
-        """Send a JSON-RPC request via HTTP and wait for the response on the SSE queue."""
-        session = self.get_session(server_name)
-        if not session or session['type'] != 'http':
-            return None
-
-        # Ensure response_queues exists
         if 'response_queues' not in session:
             session['response_queues'] = {}
         q = queue.Queue()
@@ -1536,7 +1055,6 @@ class MCPSessionManager:
                 logger.error(f"HTTP request failed: {resp.status_code} {resp.text}")
                 return None
 
-            # Wait for response on SSE queue
             try:
                 response = q.get(timeout=600)
                 return response
@@ -1544,11 +1062,9 @@ class MCPSessionManager:
                 logger.error(f"Timeout waiting for response to {method}")
                 return None
         finally:
-            # Clean up the queue
             session['response_queues'].pop(request_id, None)
 
     def start_session(self, server_name, server_config):
-        """Start a session for the given server (HTTP or stdio) and return session info."""
         with self.lock:
             if server_name in self.sessions:
                 existing = self.sessions[server_name]
@@ -1598,7 +1114,6 @@ class MCPSessionManager:
 
                                 if line.startswith('data: '):
                                     data_content = line[6:].strip()
-                                    # Capture session ID
                                     if '?session_id=' in data_content and not session_id:
                                         parts = data_content.split('?session_id=')
                                         if len(parts) > 1:
@@ -1607,7 +1122,6 @@ class MCPSessionManager:
                                             q.put(session_id)
                                             continue
  
-                                    # Parse JSON-RPC responses
                                     try:
                                         msg = json.loads(data_content)
                                         if 'id' in msg:
@@ -1638,7 +1152,6 @@ class MCPSessionManager:
 
                 logger.info(f"Got session ID: {session_id} for: {server_name}, now initializing...")
 
-                # Create session info (will be stored after initialization)
                 session_info = {
                     'type': 'http',
                     'url': url,
@@ -1650,7 +1163,6 @@ class MCPSessionManager:
                 }
                 self.sessions[server_name] = session_info
 
-                # Send initialize via send_http_request
                 init_req_id = str(uuid.uuid4())
                 init_response = self.send_http_request(server_name, init_req_id, "initialize", {
                     "protocolVersion": "2024-11-05",
@@ -1662,7 +1174,6 @@ class MCPSessionManager:
                     raise RuntimeError("Initialize failed")
                 logger.info(f"MCP initialization completed for {server_name}")
 
-                # Send initialized notification (no response expected)
                 notif_payload = {
                     "jsonrpc": "2.0",
                     "method": "initialized",
@@ -1749,7 +1260,6 @@ class MCPSessionManager:
             req_id = str(uuid.uuid4())
             response = self.send_http_request(server_name, req_id, "tools/call", {"name": tool_name, "arguments": arguments})
             if response and 'result' in response:
-                # Wrap as a Response-like object for compatibility with existing code
                 class StdioResponse:
                     def __init__(self, json_data):
                         self._json = json_data
@@ -1782,10 +1292,8 @@ class MCPSessionManager:
         else:
             return None
 
-# Global instance
 mcp_manager = MCPSessionManager()
 
-# ---------- MCP Proxy Endpoints (multi-server) ----------
 @app.route('/mcp/sse')
 @login_required
 def mcp_sse():
@@ -1852,7 +1360,6 @@ def mcp_messages():
         response.headers['Access-Control-Allow-Origin'] = '*'
         return response
     elif server_type == 'stdio':
-        # Ensure session exists
         try:
             session_info = mcp_manager.start_session(server_name, config)
         except Exception as e:
@@ -1871,7 +1378,6 @@ def mcp_messages():
     else:
         return jsonify({'error': 'Unsupported server type'}), 400
 
-# ---------- API: MCP Server Management (start/stop) ----------
 @app.route('/api/mcp_servers/<name>/start', methods=['POST'])
 @login_required
 def start_mcp_server(name):
@@ -1883,7 +1389,6 @@ def start_mcp_server(name):
         return jsonify({'error': 'Server not found'}), 404
     try:
         session_info = mcp_manager.start_session(name, config)
-        # Discover tools after start (optional)
         tools = mcp_manager.discover_tools(name)
         return jsonify({'status': 'started', 'tools': tools or []})
     except Exception as e:
@@ -1912,8 +1417,7 @@ def get_mcp_server_status(name):
     if session['type'] == 'stdio':
         alive = session['stdio_session'].is_alive()
         return jsonify({'status': 'running' if alive else 'stopped'})
-    else:  # http
-        # Check if SSE thread is alive
+    else:  
         if 'sse_thread' in session and session['sse_thread'].is_alive():
             return jsonify({'status': 'running'})
         else:
@@ -1927,7 +1431,6 @@ def get_mcp_server_tools(name):
     config = servers.get(name)
     if not config:
         return jsonify({'error': 'Server not found'}), 404
-    # Ensure session is started
     session = mcp_manager.get_session(name)
     if not session:
         try:
@@ -1937,7 +1440,6 @@ def get_mcp_server_tools(name):
     tools = mcp_manager.discover_tools(name)
     return jsonify({'tools': tools or []})
 
-# ---------- Streaming (tool execution) with auto‑spawn ----------
 STREAM_ALLOWED_TOOLS = {"nmap", "gobuster", "sqlmap", "nikto", "wpscan", "hydra", "enum4linux", "curl", "ffuf", "dirb", "aircrack-ng", "airmon-ng", "airodump-ng", "wifite", "netcat", "john"}
 
 @app.route('/api/stream/run_tool', methods=['POST'])
@@ -1948,9 +1450,8 @@ def stream_run_tool():
     args = data.get('args', {})
     target = data.get('target', '')
     sessionId = data.get('sessionId', '')
-    server_name = data.get('server')  # optional, can be inferred
+    server_name = data.get('server')  
 
-    # Local CLI tools (unchanged)
     if tool:
         limits = {
             "nmap": (3, 60),
@@ -2027,19 +1528,16 @@ def stream_run_tool():
         response.headers['Cache-Control'] = 'no-cache'
         return response
 
-    # --- MCP tools ---
     if not sessionId:
         return jsonify({'error': 'sessionId required for MCP tools'}), 400
 
     servers = get_mcp_servers()
     if not server_name:
-        # Try to find server that provides this tool (by checking cached tools)
         for name, config in servers.items():
             session = mcp_manager.get_session(name)
             if session and session.get('tools_cache') and tool in session['tools_cache']:
                 server_name = name
                 break
-        # If still not found, try to start each server and discover tools (lazy)
         if not server_name:
             for name, config in servers.items():
                 try:
@@ -2054,13 +1552,11 @@ def stream_run_tool():
     if not server_name:
         return jsonify({'error': 'No server found for this tool'}), 400
 
-    # Ensure session exists (auto-spawn)
     try:
         session_info = mcp_manager.start_session(server_name, servers[server_name])
     except Exception as e:
         return jsonify({'error': f'Failed to start session: {str(e)}'}), 500
 
-    # Send tool call
     response = mcp_manager.send_tool_call(server_name, tool, args)
     if response is None:
         return jsonify({'error': 'Failed to send tool call'}), 500
@@ -2074,10 +1570,9 @@ def stream_run_tool():
 @login_required
 def compress_workspace_chat(workspace_id):
     history = load_chat_history(current_user.id, workspace_id)
-    if len(history) > 10:  # only if enough messages
+    if len(history) > 10:  
         old_part = history[:-4]
         recent_part = history[-4:]
-        # Call the same summarization
         summary_text = summarize_conversation(old_part, "kaggle", "llama3.1:8b")
         new_history = [
             {"role": "system", "content": f"Previous conversation summary: {summary_text}"}
@@ -2086,8 +1581,6 @@ def compress_workspace_chat(workspace_id):
         return jsonify({'status': 'ok'})
     return jsonify({'status': 'skipped', 'message': 'Not enough messages to compress'})
 
-# ----- tool mapping --------------
-# Initialize tool mapping on startup
 try:
     discover_all_tools()
 except Exception as e:
@@ -2099,12 +1592,10 @@ def refresh_tools():
     discover_all_tools()
     return jsonify({'status': 'ok', 'tools': TOOL_SERVER_MAP})    
 
-# -------------- stop and restart server ------------
 @app.route('/api/stop', methods=['POST'])
 @login_required
 def stop_server():
     """Shut down the Flask server."""
-    # Only allow admin
     if current_user.id != 'saint':
         return jsonify({'error': 'Unauthorized'}), 403
     def shutdown():
@@ -2125,7 +1616,6 @@ def restart_server():
     threading.Thread(target=restart).start()
     return jsonify({'message': 'Server restarting...'})
 
-# ---------- Other MCP endpoints (legacy active, etc.) ----------
 @app.route('/api/mcp_servers/active', methods=['GET'])
 @login_required
 def get_active_mcp():
@@ -2138,12 +1628,10 @@ def get_active_mcp():
 def set_active_mcp():
     return jsonify({'status': 'deprecated'})
 
-# ---------- Helper functions for tool calling ----------
 _tools_description_cache = None
 def get_tools_description():
-    """Return a detailed description of each tool with argument names and types."""
     try:
-        tools = router.list_tools()  # returns list of tool dicts
+        tools = router.list_tools()  
     except Exception as e:
         logger.error(f"Failed to list tools: {e}")
         return "No tools available (error retrieving)."
@@ -2176,7 +1664,6 @@ def execute_tool(tool_name, args, workspace=None, username=None, user_query=None
             "nikto": (2, 120),
             "hydra": (2, 60),
             "ffuf": (2, 60),
-            # default: 5 per minute
         }
         max_calls, period = limits.get(tool_name, (5, 60))
         logger.info(f"Rate check: user={username}, tool={tool_name}, max={max_calls}, period={period}")
@@ -2185,17 +1672,14 @@ def execute_tool(tool_name, args, workspace=None, username=None, user_query=None
             return f"Rate limit exceeded for {tool_name}. Please wait."
 
     result = router.call_tool(tool_name, args)
-    # Convert result to string, handle errors, store in session memory
     if 'error' in result:
         result_str = f"Error: {result['error']}"
     else:
-        # Result is the tool's output, may contain 'content', 'text', etc.
         result_str = json.dumps(result, indent=2) if isinstance(result, dict) else str(result)
     if username and workspace:
         append_workspace_memory(username, workspace, tool_name, args, result_str, user_query)
     return result_str
     
-# ---------- ngrok (unchanged) ----------
 ngrok_tunnel = None
 
 @app.route('/api/ngrok/start', methods=['POST'])
@@ -2231,7 +1715,6 @@ def ngrok_status():
     else:
         return jsonify({'status': 'stopped'})
 
-#  ---------- Workspace API ----------
 @app.route('/api/workspaces', methods=['GET'])
 @login_required
 def list_workspaces_api():
@@ -2241,22 +1724,19 @@ def list_workspaces_api():
 @login_required
 def create_workspace():
     name = request.json.get('name', 'workspace')
-    workspace_id = secure_filename(name).replace('.', '_').strip()
-    if not workspace_id:
-        workspace_id = 'workspace'
-
-    base_id = workspace_id
+    base_id = secure_filename(name).replace('.', '_').strip() or 'workspace'
     counter = 1
-    while safe_join(get_workspace_dir(current_user.id, workspace_id)).exists():
+    workspace_id = base_id
+    while Workspace.query.filter_by(user_id=current_user.id, workspace_id=workspace_id).first():
         workspace_id = f"{base_id}_{counter}"
         counter += 1
-
-    ws_dir = safe_join(get_workspace_dir(current_user.id, workspace_id))
-    ws_dir.mkdir(exist_ok=True)
-    meta = {"name": name, "created_at": datetime.now().isoformat()}
-    (ws_dir / "meta.json").write_text(json.dumps(meta))
-    save_chat_history(current_user.id, workspace_id, [])
-    save_workspace_session_memory(current_user.id, workspace_id, {"executed_commands": [], "current_phase": "reconnaissance"})
+    workspace = Workspace(
+        workspace_id=workspace_id,
+        name=name,
+        user_id=current_user.id
+    )
+    db.session.add(workspace)
+    db.session.commit()
     return jsonify({'id': workspace_id, 'name': name})
 
 @app.route('/api/workspaces/<workspace_id>/chat', methods=['GET'])
@@ -2294,7 +1774,6 @@ def update_workspace_session(workspace_id):
     save_workspace_session_memory(current_user.id, workspace_id, memory)
     return jsonify({'status': 'ok'})
 
-# ---------- View mode ----------
 def get_view_mode():
     view = request.args.get('view')
     if view in ['mobile', 'desktop']:
@@ -2312,7 +1791,6 @@ def render_page(template_name, **context):
     context['base_template'] = 'base_mobile.html' if mode == 'mobile' else 'base.html'
     return render_template(template_name, **context)
 
-# ---------- Pages ----------
 @app.route('/')
 def index():
     return redirect(url_for('login') if not current_user.is_authenticated else url_for('chat'))
@@ -2323,11 +1801,8 @@ def login():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
-        pending = load_pending_users()
-        if username in pending and not pending[username].get('confirmed', False):
-            return render_page('login.html', error="Account pending admin confirmation")
-        if username in users_db and verify_password(users_db[username], password):
-            user = User(username)
+        user = User.query.filter_by(username=username).first()
+        if user and bcrypt.checkpw(password.encode(), user.password_hash.encode()):
             login_user(user)
             return redirect(url_for('chat'))
         return render_page('login.html', error="Invalid credentials")
@@ -2347,28 +1822,24 @@ def signup():
         password = request.form.get('password')
         if not username or not password:
             return render_template('signup.html', error="Username and password required")
-        if username in users_db:
+        if User.query.filter_by(username=username).first():
             return render_template('signup.html', error="Username already registered")
-        pending = load_pending_users()
-        if username in pending:
+        if PendingUser.query.filter_by(username=username).first():
             return render_template('signup.html', error="Username already pending confirmation")
-        pending[username] = {
-            "password_hash": hash_password(password),
-            "created_at": datetime.now().isoformat(),
-            "confirmed": False
-        }
-        save_pending_users(pending)
+        pending = PendingUser(username=username, password_hash=hash_password(password))
+        db.session.add(pending)
+        db.session.commit()
         logger.info(f"New signup pending: {username}")
         return render_template('signup.html', message="Account created, waiting for admin confirmation")
     return render_template('signup.html')
-
+    
 @app.route('/api/pending_users', methods=['GET'])
 @login_required
 def list_pending_users():
     if current_user.id != 'saint':
         return jsonify({'error': 'Unauthorized'}), 403
-    pending = load_pending_users()
-    result = [{'username': u, 'created_at': data['created_at']} for u, data in pending.items()]
+    pending = PendingUser.query.all()
+    result = [{'username': u.username, 'created_at': u.created_at.isoformat()} for u in pending]
     return jsonify(result)
 
 @app.route('/api/pending_users/<username>/confirm', methods=['POST'])
@@ -2376,14 +1847,13 @@ def list_pending_users():
 def confirm_user(username):
     if current_user.id != 'saint':
         return jsonify({'error': 'Unauthorized'}), 403
-    pending = load_pending_users()
-    if username not in pending:
+    pending = PendingUser.query.filter_by(username=username).first()
+    if not pending:
         return jsonify({'error': 'Not found'}), 404
-    users_db[username] = pending[username]['password_hash']
-    with open(USERS_FILE, "w") as f:
-        json.dump(users_db, f)
-    del pending[username]
-    save_pending_users(pending)
+    user = User(username=username, password_hash=pending.password_hash)
+    db.session.add(user)
+    db.session.delete(pending)
+    db.session.commit()
     logger.info(f"Admin confirmed user: {username}")
     return jsonify({'status': 'confirmed'})
 
@@ -2392,15 +1862,14 @@ def confirm_user(username):
 def reject_user(username):
     if current_user.id != 'saint':
         return jsonify({'error': 'Unauthorized'}), 403
-    pending = load_pending_users()
-    if username not in pending:
+    pending = PendingUser.query.filter_by(username=username).first()
+    if not pending:
         return jsonify({'error': 'Not found'}), 404
-    del pending[username]
-    save_pending_users(pending)
+    db.session.delete(pending)
+    db.session.commit()
     logger.info(f"Admin rejected user: {username}")
     return jsonify({'status': 'rejected'})
 
-# ---------- Other pages ----------
 @app.route('/tools')
 @login_required
 def tools():
@@ -2448,13 +1917,13 @@ def users():
 def dashboard():
     return render_page('dashboard.html')
 
-# ---------- API: Users ----------
 @app.route('/api/users', methods=['GET'])
 @login_required
 def list_users():
     if current_user.id != 'saint':
         return jsonify({'error': 'Unauthorized'}), 403
-    return jsonify(list(users_db.keys()))
+    users = User.query.all()
+    return jsonify([u.username for u in users])
 
 @app.route('/api/users', methods=['POST'])
 @login_required
@@ -2466,11 +1935,11 @@ def add_user():
     password = data.get('password')
     if not username or not password:
         return jsonify({'error': 'Username and password required'}), 400
-    if username in users_db:
+    if User.query.filter_by(username=username).first():
         return jsonify({'error': 'User already exists'}), 400
-    users_db[username] = hash_password(password)
-    with open(USERS_FILE, "w") as f:
-        json.dump(users_db, f)
+    user = User(username=username, password_hash=hash_password(password))
+    db.session.add(user)
+    db.session.commit()
     return jsonify({'status': 'ok'})
 
 @app.route('/api/users/<username>', methods=['DELETE'])
@@ -2480,14 +1949,13 @@ def delete_user(username):
         return jsonify({'error': 'Unauthorized'}), 403
     if username == 'saint':
         return jsonify({'error': 'Cannot delete admin'}), 400
-    if username not in users_db:
+    user = User.query.filter_by(username=username).first()
+    if not user:
         return jsonify({'error': 'User not found'}), 404
-    del users_db[username]
-    with open(USERS_FILE, "w") as f:
-        json.dump(users_db, f)
+    db.session.delete(user)
+    db.session.commit()
     return jsonify({'status': 'ok'})
 
-# ---------- API: RAG ----------
 @app.route('/api/rag/upload', methods=['POST'])
 @login_required
 def upload_file():
@@ -2526,7 +1994,6 @@ def list_knowledge():
     files = [f.name for f in KNOWLEDGE_DIR.glob("*")]
     return jsonify(files)
 
-# ---------- API: Playbooks ----------
 @app.route('/api/playbooks', methods=['GET'])
 @login_required
 def list_playbooks():
@@ -2552,13 +2019,15 @@ def create_playbook():
 @app.route('/api/playbooks/<name>', methods=['DELETE'])
 @login_required
 def delete_playbook(name):
-    path = PLAYBOOKS_DIR / f"{name}.yaml"
+    safe_name = re.sub(r'[^a-zA-Z0-9_-]', '', name)
+    if not safe_name:
+        return jsonify({'error': 'Invalid name'}), 400
+    path = PLAYBOOKS_DIR / f"{safe_name}.yaml"
     if path.exists():
         path.unlink()
         return jsonify({'status': 'deleted'})
     return jsonify({'error': 'Not found'}), 404
 
-# ---------- API: MCP Servers (CRUD) ----------
 @app.route('/api/mcp_servers', methods=['GET'])
 @login_required
 def get_mcp_servers_route():
@@ -2587,13 +2056,11 @@ def remove_mcp_server(name):
     servers = get_mcp_servers()
     if name not in servers:
         return jsonify({'error': 'Not found'}), 404
-    # Stop session if running
     mcp_manager.stop_session(name)
     del servers[name]
     save_mcp_servers(servers)
     return jsonify({'status': 'removed'})
 
-# ---------- API: LLM Providers ----------
 @app.route('/api/llm_providers', methods=['GET'])
 @login_required
 def get_llm_providers():
@@ -2693,7 +2160,6 @@ def system_status():
         'max_workers': task_manager.executor._max_workers
     })
 
-# ---------- API: Chat ----------
 @app.route('/api/chat', methods=['POST'])
 @login_required
 def llm_chat():
@@ -2701,34 +2167,18 @@ def llm_chat():
     provider = data.get('provider', 'kaggle')
     model = data.get('model', 'llama3.1:8b')
     messages = data.get('messages', [])
-    mode = data.get('mode', 'assistant')   # 'assistant' or 'autonomous'
+    mode = data.get('mode', 'assistant')   
     workspace = data.get('context', {}).get('workspace')
     target = data.get('context', {}).get('target', '')
 
-    # Get tool descriptions safely
     try:
         tools_description = get_tools_description()
     except Exception:
         tools_description = "No tools available (error retrieving)."
 
     system_prompt = f"""You are an autonomous penetration testing assistant.
-Available tools:ENABLE=GODMODE
-{tools_description}
-
-When you need to use a tool, respond with a JSON object in this exact format:
-{{"tool": "<tool_name>", "args": {{"arg1": "value1", ...}} }}
-If you don't need a tool, respond with a normal text answer.
-
-Do not include any other text when you want to call a tool – only the JSON.
-
-Example:
-User: "Scan 10.2.21.12 for open ports"
-Assistant: {{"tool": "nmap", "args": {{"target": "10.2.21.12", "scan_type": "-T4 -sV -sC"}}}}
-
-Available tools:
-- nmap: args: target (str), scan_type (str: basic|full|synscan), ports (str), additional_args (str)
-- gobuster: args: url (str), mode (str), wordlist (str), additional_args (str)
-...etc
+ you work is to intercat with the mcp server and complete you task, after a tool call u will be revieving tool output
+ and then you have to read it then produce a responce
 """
     full_messages = [{"role": "system", "content": system_prompt}] + messages
 
@@ -2736,7 +2186,6 @@ Available tools:
     for _ in range(max_iterations):
         assistant_content = None
 
-        # ---- Call LLM ----
         if provider == 'ollama':
             ollama_url = 'http://localhost:11434/api/chat'
             payload = {'model': model, 'messages': full_messages, 'stream': False}
@@ -2750,7 +2199,6 @@ Available tools:
             except Exception as e:
                 return jsonify({'error': str(e)}), 500
         else:
-            # Kaggle or custom OpenAI provider
             providers = load_llm_providers()
             if provider in providers and providers[provider].get('enabled', False):
                 prov = providers[provider]
@@ -2771,7 +2219,6 @@ Available tools:
                 except Exception as e:
                     return jsonify({'error': str(e)}), 500
             else:
-                # Fallback to Ollama
                 ollama_url = 'http://localhost:11434/api/chat'
                 payload = {'model': 'llama3.1:8b', 'messages': full_messages, 'stream': False}
                 try:
@@ -2784,19 +2231,15 @@ Available tools:
                 except Exception as e:
                     return jsonify({'error': str(e)}), 500
 
-        # If we still have no content, return an error
         if assistant_content is None:
             return jsonify({'error': 'LLM returned no content'}), 500
         
-        # After obtaining assistant_content
         if not assistant_content or assistant_content.strip() == "":
             assistant_content = "⚠️ The LLM returned an empty response. Please try again or check your provider settings."
             logger.warning("LLM returned empty content, using fallback message.")
 
-        # ---- Try to parse as tool call ----
         tool_call = extract_json_object(assistant_content)
         if tool_call and isinstance(tool_call, dict) and 'tool' in tool_call and 'args' in tool_call:
-            # Valid tool call found
             tool_name = tool_call['tool']
             args = tool_call['args']
             logger.info(f"Detected tool call: {tool_name} with args {args}")
@@ -2829,14 +2272,10 @@ Available tools:
             args = tool_call['args']
             logger.info(f"Detected tool call: {tool_name} with args {args}")
 
-            # Inject target if missing
             if target:
                 for key in ['target', 'host', 'url']:
                     if key not in args:
                         args[key] = target
-
-            # ---- REMOVED the "No tools" check ----
-            # Always attempt to execute the tool
 
             if mode == 'assistant':
                 session['pending_tool'] = {'tool': tool_name, 'args': args, 'workspace': workspace}
@@ -2848,20 +2287,13 @@ Available tools:
                     'message': f"Proposed tool: {tool_name} with args {args}. Confirm?"
                 })
 
-            # Autonomous: execute and continue
             tool_result = execute_tool(tool_name, args, workspace, current_user.id)
             full_messages.append({"role": "assistant", "content": assistant_content})
             full_messages.append({"role": "user", "content": f"Tool {tool_name} returned:\n{tool_result}"})
-            continue  # loop again
-
-        #except json.JSONDecodeError:
-            # Not a tool call, it's a normal answer
-         #   pass
-        
+            continue          
         logger.info(f"Returning normal answer: {assistant_content[:100]}...")
         return jsonify({'choices': [{'message': {'content': assistant_content}}]})
         
-        # Normal answer
         return jsonify({'choices': [{'message': {'content': assistant_content}}]})
 
     return jsonify({'error': 'Max tool iterations reached'}), 400
@@ -2870,7 +2302,6 @@ Available tools:
 @login_required
 @limiter.exempt
 def running_tasks():
-    """Return a list of currently running or pending tasks for the user."""
     user_tasks = []
     for task_id, task in task_manager.tasks.items():
         if task['user_id'] == current_user.id and task['status'] in (TaskStatus.RUNNING, TaskStatus.PENDING, TaskStatus.PENDING_CONFIRMATION):
@@ -2895,8 +2326,6 @@ def test_llm():
     model = data.get('model', 'llama3.1:8b')
     prompt = data.get('prompt', 'Hello')
     messages = [{"role": "user", "content": prompt}]
-    # Call the same logic as in llm_chat
-    # Return the raw response
         
 @app.route('/api/chat/confirm_tool', methods=['POST'])
 @login_required
@@ -2909,18 +2338,14 @@ def confirm_tool():
     workspace = pending.get('workspace')
     full_messages = session.get('full_messages', [])
 
-    # Execute the tool
     tool_result = execute_tool(tool_name, args, workspace, current_user.id)
 
-    # Continue the conversation: add tool result and call LLM again
     full_messages.append({"role": "assistant", "content": f"Tool {tool_name} was executed."})
     full_messages.append({"role": "user", "content": f"Tool {tool_name} returned:\n{tool_result}"})
 
-    # Use the same provider as the original request (default to kaggle)
     provider = request.json.get('provider', 'kaggle')
     model = request.json.get('model', 'llama3.1:8b')
 
-    # Call LLM
     if provider == 'ollama':
         ollama_url = 'http://localhost:11434/api/chat'
         payload = {'model': model, 'messages': full_messages, 'stream': False}
@@ -2954,7 +2379,6 @@ def confirm_tool():
             except Exception as e:
                 return jsonify({'error': str(e)}), 500
         else:
-            # Fallback to Ollama
             ollama_url = 'http://localhost:11434/api/chat'
             payload = {'model': 'llama3.1:8b', 'messages': full_messages, 'stream': False}
             try:
@@ -2967,7 +2391,6 @@ def confirm_tool():
             except Exception as e:
                 return jsonify({'error': str(e)}), 500
 
-    # Clear pending
     session.pop('pending_tool', None)
     session.pop('full_messages', None)
     return jsonify({'choices': [{'message': {'content': final_answer}}]})
@@ -2980,12 +2403,10 @@ def sync_workspace(workspace_id):
     if provider != 'kaggle':
         return jsonify({'error': 'Sync only supported for Kaggle provider'}), 400
     
-    # Get the full history
     history = load_chat_history(current_user.id, workspace_id)
     if not history:
         return jsonify({'status': 'ok', 'synced': 0})
     
-    # Get provider config
     providers = load_llm_providers()
     prov = providers.get('kaggle')
     if not prov or not prov.get('enabled'):
@@ -2996,7 +2417,6 @@ def sync_workspace(workspace_id):
     if not url:
         return jsonify({'error': 'Provider URL not set'}), 400
     
-    # Call /v1/sync endpoint
     sync_url = f"{url}/v1/sync"
     headers = {'Content-Type': 'application/json', 'X-API-Key': api_key}
     payload = {
@@ -3017,7 +2437,6 @@ def sync_workspace(workspace_id):
 @app.route('/api/report', methods=['GET'])
 @login_required
 def generate_report():
-    """Generate a markdown report from the current workspace chat history."""
     workspace_id = request.args.get('workspace', 'default')
     target = request.args.get('target','Not specified')
     history = load_chat_history(current_user.id, workspace_id)
@@ -3028,16 +2447,12 @@ def generate_report():
     report_lines.append(f"**Target:** {target}")
     report_lines.append(f"**Workspace:** {workspace_id}\n")
     
-    # Extract tool calls and their results
     findings = []
     for msg in history:
         if msg['role'] == 'assistant' and 'content' in msg:
-            # Try to see if it contains a tool result (we store tool results as assistant messages)
             content = msg['content']
             if 'Tool' in content and 'returned' in content:
                 findings.append(content)
-            #elif 'nmap' in content.lower() or 'scan' in content.lower():
-             #   findings.append(content)
     
     if findings:
         report_lines.append("## Findings\n")
@@ -3045,12 +2460,6 @@ def generate_report():
     else:
         report_lines.append("No findings recorded.")
     
-    # Include target if set
-    #target = get_global_target()  # we'll need to add a helper or get from session
-    #if target:
-     #   report_lines.append(f"\n**Target:** {target}")
-    
-    # Include list of executed tools from session memory
     mem = get_workspace_session_memory(current_user.id, workspace_id)
     commands = mem.get('executed_commands', [])
     if commands:
@@ -3074,11 +2483,9 @@ def ollama_models():
     except Exception as e:
         return jsonify({'models': [], 'error': str(e)}), 500
 
-# ---------- API: chat with stream --------
 @app.route('/api/chat/stream', methods=['POST'])
 @login_required
 def llm_chat_stream():
-    """Streaming chat with tool execution visibility."""
     data = request.json
     provider = data.get('provider', 'kaggle')
     model = data.get('model', 'llama3.1:8b')
@@ -3101,14 +2508,6 @@ def llm_chat_stream():
         use_rag=use_rag
     )
     logger.info(f"task_id set to: {task_id}")
-
-    # Get tool descriptions
-    #try:
-     #   tools_description = get_tools_description()
-    #except Exception:
-    #    tools_description = "No tools available (error retrieving)."
-
-    #logger.info(f"setting system prompt")
     system_prompt = """You are an autonomous penetration testing assistant.
 If you need a tool, first request the list of available tools by replying with:
 {"request": "list_tools"}
@@ -3156,13 +2555,11 @@ def get_task_status(task_id):
     task = task_manager.get_task(task_id)
     if not task:
         return jsonify({'error': 'Task not found'}), 404
-    # Security: ensure the task belongs to the current user
     if task['user_id'] != current_user.id:
         return jsonify({'error': 'Unauthorized'}), 403
-    # Return a sanitized version
     response = {
         'status': task['status'].value,
-        'events': task['events'],   # list of events that can be replayed
+        'events': task['events'],
         'result': task.get('result'),
         'error': task.get('error'),
         'tokens_used': task.get('tokens_used', 0)
@@ -3180,11 +2577,9 @@ def confirm_tool_proposal(task_id):
     if task['status'] != TaskStatus.PENDING_CONFIRMATION:
         return jsonify({'error': 'Task is not waiting for confirmation'}), 400
 
-    # Wake up the background thread
     resume_event = task.get('resume_event')
     if resume_event:
         resume_event.set()
-        # Mark confirmed so the thread knows it was a confirmation
         task_manager.update_task(task_id, confirmed=True, status=TaskStatus.RUNNING)
         return jsonify({'status': 'confirmed', 'message': 'Tool will now be executed.'})
     else:
@@ -3224,7 +2619,7 @@ def tool_limits(tool):
     key = (current_user.id, tool)
     now = time.time()
     records = [ts for ts in tool_rate_limiter.records.get(key, []) if ts > now - 60]
-    limit = 5  # default, but you could look up per tool
+    limit = 5  
     return jsonify({
         "tool": tool,
         "calls_in_last_minute": len(records),
@@ -3232,7 +2627,6 @@ def tool_limits(tool):
         "remaining": max(0, limit - len(records))
     })
                     
-# ---------- API: Prompt Assembly ----------
 @app.route('/api/assemble_prompt', methods=['POST'])
 @login_required
 def assemble_prompt():
@@ -3282,7 +2676,6 @@ User request: {user_prompt}
 Respond appropriately with tool calls if needed."""
     return jsonify({'prompt': full_prompt})
 
-# ---------- API: System Prompts ----------
 @app.route('/api/prompts', methods=['GET'])
 @login_required
 def list_prompts():
@@ -3304,7 +2697,6 @@ def save_prompt(name):
     (PROMPTS_DIR / f"{name}.txt").write_text(content)
     return jsonify({'status': 'saved'})
 
-# ---------- API: Scripts ----------
 @app.route('/api/scripts', methods=['GET'])
 @login_required
 def list_scripts():
@@ -3423,7 +2815,6 @@ def run_script(script_id):
         'timeout': result.get('timeout', False)
     })
 
-# ---------- API: Internal Scraper ----------
 @app.route('/api/scrape/internal', methods=['POST'])
 @login_required
 def internal_scraper():
@@ -3479,7 +2870,6 @@ Important:
     script_file.write_text(generated_code)
     return jsonify({'status': 'generated', 'code': generated_code, 'script_id': script_id})
 
-# ---------- API: Scraped Data ----------
 @app.route('/api/scraped_data', methods=['GET'])
 @login_required
 def list_scraped_data():
@@ -3612,18 +3002,7 @@ def kaggle_models():
         return jsonify({'error': str(e)}), 500
         
 def periodic_sync():
-    while True:
-        time.sleep(300)  # 5 minutes
-        with app.app_context():
-            for user_dir in USERS_DIR.iterdir():
-                if user_dir.is_dir():
-                    username = user_dir.name
-                    workspaces = list_workspaces(username)
-                    for ws in workspaces:
-                        # Call background_sync for each workspace
-                        threading.Thread(target=background_sync, args=(username, ws['id']), daemon=True).start()
-
-# Start the periodic sync thread
+    threading.Thread(target=background_sync, args=(username, ws['id']), daemon=True).start()
 threading.Thread(target=periodic_sync, daemon=True).start()
 
 # ---------- Run ----------

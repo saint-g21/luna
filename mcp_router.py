@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""
-MCP Router – Unified interface for multiple MCP servers (stdio and HTTP/SSE).
-Handles discovery, tool mapping, execution, and per‑server control.
-"""
-
 import os
 import sys
 import json
@@ -20,12 +15,7 @@ from flask_login import current_user
 
 logger = logging.getLogger(__name__)
 
-# =============================================================================
-# Stdio MCP Session (reused from app.py, with small improvements)
-# =============================================================================
-
 class StdioMCPSession:
-    """Manages a subprocess MCP server over stdio."""
     def __init__(self, command, env=None, cwd=None):
         self.command = command
         self.env = env or {}
@@ -69,7 +59,6 @@ class StdioMCPSession:
             return False
 
     def _initialize(self):
-        # Send initialize
         init_req = {
             "jsonrpc": "2.0",
             "id": "init-1",
@@ -84,7 +73,6 @@ class StdioMCPSession:
         if resp is None:
             logger.error("Initialize request failed")
             return False
-        # Send initialized notification (no response expected)
         notif = {
             "jsonrpc": "2.0",
             "method": "initialized",
@@ -110,7 +98,6 @@ class StdioMCPSession:
                 logger.warning(f"Non-JSON line from stdio: {line.strip()}")
 
     def send_request(self, request_id, method, params, timeout=600):
-        """Send a JSON-RPC request and return the response (blocking)."""
         with self.lock:
             if not self.proc or self.proc.poll() is not None:
                 if not self.start():
@@ -163,12 +150,7 @@ class ToolRateLimiter:
         self.records[key].append(now)
         return True
 
-# Global instance
 tool_rate_limiter = ToolRateLimiter()
-
-# =============================================================================
-# HTTP/SSE MCP Session (simplified but functional)
-# =============================================================================
 
 class HttpMCPSession:
     """Manages an MCP server over HTTP/SSE."""
@@ -185,7 +167,6 @@ class HttpMCPSession:
     def start(self):
         if self._connected:
             return True
-        # Connect to SSE and get session_id
         q = queue.Queue()
         session_id = None
         stop_event = self.stop_event
@@ -207,14 +188,12 @@ class HttpMCPSession:
                             continue
                         if line.startswith('data: '):
                             data_content = line[6:].strip()
-                            # Capture session ID
                             if '?session_id=' in data_content and not session_id:
                                 parts = data_content.split('?session_id=')
                                 if len(parts) > 1:
                                     session_id = parts[1].split(' ')[0].split('&')[0]
                                     logger.info(f"Captured session_id: {session_id}")
                                     q.put(session_id)
-                            # Parse JSON-RPC responses
                             try:
                                 msg = json.loads(data_content)
                                 if 'id' in msg:
@@ -239,7 +218,6 @@ class HttpMCPSession:
             return False
         self.session_id = session_id
         self._connected = True
-        # Send initialize
         init_req_id = str(uuid.uuid4())
         init_response = self.send_request(init_req_id, "initialize", {
             "protocolVersion": "2024-11-05",
@@ -249,7 +227,6 @@ class HttpMCPSession:
         if init_response is None or 'error' in init_response:
             self._connected = False
             return False
-        # Send initialized notification
         notif_payload = {"jsonrpc": "2.0", "method": "initialized", "params": {}}
         requests.post(f"{self.url}/messages/?session_id={session_id}", json=notif_payload, timeout=5)
         logger.info(f"HTTP MCP initialization completed for {self.url}")
@@ -291,11 +268,6 @@ class HttpMCPSession:
 
     def is_alive(self):
         return self._connected and self.sse_thread and self.sse_thread.is_alive()
-
-
-# =============================================================================
-# Adapter Base and Implementations
-# =============================================================================
 
 class BaseAdapter:
     def connect(self) -> bool:
@@ -404,17 +376,14 @@ class HttpAdapter(BaseAdapter):
         return self.session.is_alive()
 
 
-# =============================================================================
-# MCP Router
-# =============================================================================
 
 class MCPRouter:
     def __init__(self, config_path="mcp_servers.json"):
         self.config_path = config_path
-        self._config = {}          # will store the loaded config
-        self.adapters = {}          # server_name -> adapter instance
-        self.tool_map = {}          # tool_name -> server_name
-        self.tool_schemas = {}      # tool_name -> inputSchema   <-- ADD THIS LINE
+        self._config = {}          
+        self.adapters = {}          
+        self.tool_map = {}          
+        self.tool_schemas = {}      
         self.lock = threading.RLock()
         self._load_and_connect()
 
@@ -422,7 +391,6 @@ class MCPRouter:
         with open(self.config_path) as f:
             config = json.load(f)
         self._config = config
-        # Disconnect existing adapters if any
         for name, adapter in self.adapters.items():
             try:
                 adapter.disconnect()
@@ -430,7 +398,7 @@ class MCPRouter:
                 pass
         self.adapters.clear()
         self.tool_map.clear()
-        self.tool_schemas.clear()   # <-- ADD THIS LINE
+        self.tool_schemas.clear()   
         for name, cfg in config.items():
             adapter = self._create_adapter(name, cfg)
             if adapter and adapter.connect():
@@ -459,7 +427,7 @@ class MCPRouter:
 
     def _discover_all(self):
         self.tool_map.clear()
-        self.tool_schemas.clear()   # <-- ADD THIS LINE
+        self.tool_schemas.clear()   
         for name, adapter in self.adapters.items():
             try:
                 tool_list = adapter.discover_tools()
@@ -504,32 +472,26 @@ class MCPRouter:
         """Reload the configuration and reconnect to all servers."""
         self._load_and_connect()
 
-    # ---- Per‑server control ----
+    
     def start_server(self, name: str) -> bool:
         """Start (or restart) a specific server by name."""
         with self.lock:
-            # If already connected and alive, return True
             if name in self.adapters and self.adapters[name].is_alive():
                 return True
-            # Remove existing adapter if any
             self.adapters.pop(name, None)
-            # Remove its tools from the map
             to_remove = [t for t, s in self.tool_map.items() if s == name]
             for t in to_remove:
                 del self.tool_map[t]
                 self.tool_schemas.pop(t, None)
-            # Get config
             cfg = self._config.get(name)
             if not cfg:
                 logger.error(f"No config found for server {name}")
                 return False
-            # Create adapter
             adapter = self._create_adapter(name, cfg)
             if not adapter:
                 return False
             if adapter.connect():
                 self.adapters[name] = adapter
-                # Discover tools for this server
                 tool_list = adapter.discover_tools()
                 if tool_list:
                     for tool in tool_list:
@@ -546,14 +508,12 @@ class MCPRouter:
                 return False
 
     def stop_server(self, name: str) -> bool:
-        """Stop (disconnect) a specific server."""
         with self.lock:
             adapter = self.adapters.get(name)
             if not adapter:
                 return False
             adapter.disconnect()
             del self.adapters[name]
-            # Remove its tools from the map
             to_remove = [t for t, s in self.tool_map.items() if s == name]
             for t in to_remove:
                 del self.tool_map[t]
@@ -562,12 +522,10 @@ class MCPRouter:
             return True
 
     def get_server_status(self, name: str) -> Dict:
-        """Get status of a server: connected, tools count, etc."""
         with self.lock:
             adapter = self.adapters.get(name)
             if not adapter:
                 return {"connected": False, "tools": []}
-            # Get tools for this server
             server_tools = [t for t, s in self.tool_map.items() if s == name]
             return {
                 "connected": adapter.is_alive(),
@@ -576,18 +534,12 @@ class MCPRouter:
             }
 
     def shutdown(self):
-        """Disconnect all servers."""
         for name, adapter in self.adapters.items():
             try:
                 adapter.disconnect()
                 logger.info(f"Disconnected {name}")
             except Exception as e:
                 logger.error(f"Error disconnecting {name}: {e}")
-
-
-# =============================================================================
-# Flask Blueprint
-# =============================================================================
 
 from flask import Blueprint, request, jsonify, Response, stream_with_context
 from extensions import limiter
@@ -624,7 +576,6 @@ def call_tool():
     if not tool:
         return jsonify({"error": "Missing 'tool'"}), 400
 
-    # Rate limiting
     if current_user.is_authenticated:
         limits = {
             "nmap": (3, 60),
